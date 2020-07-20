@@ -1494,8 +1494,6 @@ def brush_manager_pre_dp_update(dummy):
         return None
     props.update_after_save = False
     prefs = bpy.context.preferences.addons[Addon_Name].preferences
-    if bpy.context.mode != 'SCULPT' and prefs.switch_mode_on_save:
-        bpy.ops.sculpt.sculptmode_toggle()
     if props.set_default_brushes_custom_icon:
         set_toggle_default_icons(bpy.context)
 
