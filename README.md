@@ -29,3 +29,18 @@ Add-on Preferences:
 
 Icon Themes:
 ![Themes](images/brush_manager_themes.png)
+
+# Change Log:
+
+Brush Manager 1.0.5
+
+- First implementation of the Popup menu with a hotkey (Alt + Space)( I'm still looking forward towards Blender 2.90 release. I hope there will be a new possibility in python API for a better version of the brushes palette.)
+
+![Popup](images/brush_manager_popup.png)
+
+Here you can change the hotkey if it has already using by another add-on:
+![Popup_hotkey](images/bm_popup_hotkey.png)
+
+New Preference setting:
+
+![Popup_setting](images/bm_popup_setting.png)
