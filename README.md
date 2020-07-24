@@ -44,3 +44,6 @@ Here you can change the hotkey if it has already using by another add-on:
 New Preference setting:
 
 ![Popup_setting](images/bm_popup_setting.png)
+
+**Support**
+You can support me here https://gum.co/zLBPz Thanks!
