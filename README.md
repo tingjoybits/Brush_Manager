@@ -45,5 +45,6 @@ New Preference setting:
 
 ![Popup_setting](images/bm_popup_setting.png)
 
-**Support**
+**Support the Developer:**
+
 You can support me here https://gum.co/zLBPz Thanks!
