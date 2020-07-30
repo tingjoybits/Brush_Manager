@@ -23,9 +23,12 @@ import subprocess
 import bpy.utils.previews
 from bpy.app.handlers import persistent
 from bpy.types import Operator, Menu, Panel, PropertyGroup, AddonPreferences, Scene, WindowManager, BlendData
-from bpy.props import *   # StringProperty, EnumProperty, BoolProperty, FloatProperty
+from bpy.props import *
 
-Addon_Name = __name__.split('.')[1]
+try:
+    Addon_Name = __name__.split('.')[1]
+except IndexError:
+    Addon_Name = __name__
 
 
 def text_lookup(find_string, source_text):
@@ -78,8 +81,6 @@ def get_append_brushes(directory, b_files, exclude_default=True):
         brushes_append = list(set(brushes_append))
         brushes_append.sort()
     return brushes_append
-
-# ================================================================
 
 
 def append_brushes_from_a_file(filepath):
@@ -245,13 +246,11 @@ def get_main_list_brushes(context):
 
 
 def get_favorite_brushes(list_type='brushes'):
-    # global preview_brushes_coll
     b_preview_coll = preview_brushes_coll["favorites"]
     preview_enums = b_preview_coll.my_previews
     b_preview_coll.my_previews_dir = "favorites"
     if list_type == 'enum':
         return get_brushes_from_preview_enums(preview_enums, list_type='enum')
-        # return preview_enums
     if list_type == 'icons':
         icons = get_brushes_from_preview_enums(preview_enums, list_type='icons')
         return icons
@@ -530,6 +529,7 @@ def initialize_brush_manager_ui(props, b_preview_coll):
     clear_Default_list()
     create_default_sculpt_tools()
     check_current_file_brush_icons()
+    load_saved_favorites_list()
     if prefs.default_brushes_custom_icon and not props.set_default_brushes_custom_icon:
         props.set_default_brushes_custom_icon = True
     if prefs.selected_brush_custom_icon and not props.set_selected_brush_custom_icon:
@@ -562,7 +562,7 @@ def preview_brushes_in_folders(self, context):
     props.post_undo_last = False
 
     if props.search_in_category:
-        brushes = filter_brushes_by_name(brushes, str(props.search_bar.decode("utf-8")))  # utf-8
+        brushes = filter_brushes_by_name(brushes, str(props.search_bar.decode("utf-8")))
         brushes.sort()
     enum_items = create_enum_list(context, brushes, b_preview_coll)
     b_preview_coll.my_previews_dir = directory
@@ -763,23 +763,11 @@ def remove_fav_brush(self, context, remove_brushes):
 
 
 def remove_active_brush_favorite(self, context, fav_type='preview'):
-    # b_preview_coll = preview_brushes_coll["favorites"]
-    # if b_preview_coll.my_previews_dir != "favorites":
-    #     return {'FINISHED'}
     if fav_type == 'preview':
         active_brush = context.window_manager.brushes_in_favorites
     if fav_type == 'popup':
         active_brush = context.window_manager.fav_brush_popup
     remove_fav_brush(self, context, [active_brush])
-    # brushes = get_favorite_brushes()
-    # try:
-    #     brushes.remove(active_brush)
-    # except ValueError:
-    #     msg = "Brush Manager: Nothing to remove"
-    #     self.report({'ERROR'}, msg)
-    #     return {'FINISHED'}
-    # enum_items = create_enum_list(context, brushes, b_preview_coll)
-    # b_preview_coll.my_previews = enum_items
 
 
 def get_pref_default_brush_props():
@@ -887,10 +875,6 @@ class WM_OT_Append_from_a_File_to_Favorites(Operator):
         subtype="FILE_PATH"
     )
 
-    @classmethod
-    def poll(cls, context):
-        return context.object is not None
-
     def execute(self, context):
         if not self.filepath.endswith(".blend"):
             msg = "Selected file has to be a .blend file"
@@ -956,7 +940,6 @@ class WM_OT_Clear_Favorites(Operator):
     bl_description = "Remove all Brushes from the favorites list"
 
     def execute(self, context):
-        wm = context.window_manager
         brushes = get_favorite_brushes()
         set_first_preview_item(context, brushes, wm_enum_prop='fav')
         clear_favorites_list()
@@ -979,9 +962,6 @@ class WM_OT_Delete_Zero_User_Brushes(Operator):
             bpy.data.brushes.remove(brush, do_unlink=True)
         fav_brushes = get_favorite_brushes()
         remove_favorites = [b for b in remove_brushes if b in fav_brushes]
-        # for b in remove_brushes:
-        #     if b in fav_brushes:
-        #         remove_favorites.append(b)
         remove_fav_brush(self, context, remove_favorites)
         set_first_preview_item(context, fav_brushes, wm_enum_prop='fav')
         props = context.window_manager.brush_manager_props
@@ -1049,10 +1029,6 @@ class WM_OT_Save_Favorites(Operator):
         subtype="FILE_PATH"
     )
 
-    @classmethod
-    def poll(cls, context):
-        return context.object is not None
-
     def execute(self, context):
         if self.filepath.endswith(".blend"):
             blend_filepath = self.filepath
@@ -1086,6 +1062,61 @@ class WM_OT_Save_Favorites(Operator):
         return {'RUNNING_MODAL'}
 
 
+def load_saved_favorites_list():
+    try:
+        fav_list_settings = bpy.context.scene.bm_favorite_list_settings
+    except AttributeError:
+        return None
+    b_preview_fav = preview_brushes_coll["favorites"]
+    b_preview_fav.my_previews_dir == "favorites"
+    brushes = [i.name for i in fav_list_settings]
+    enum_items = create_enum_list(bpy.context, brushes, b_preview_fav)
+    b_preview_fav.my_previews = enum_items
+
+
+class BM_Favorite_list_settings(PropertyGroup):
+    name: StringProperty(name="Brush name")
+
+
+class WM_OT_Load_Favorites_from_current_file(Operator):
+    bl_label = 'Load the Favorites from the Current File'
+    bl_idname = 'wm.load_favorites_from_current_file'
+    bl_description = "Load the favorites list of brushes from the current file"
+
+    def execute(self, context):
+        brushes = get_favorite_brushes()
+        set_first_preview_item(context, brushes, wm_enum_prop='fav')
+        clear_favorites_list()
+        load_saved_favorites_list()
+
+        return {'FINISHED'}
+
+
+def save_favorites_to_current_file():
+    try:
+        fav_list_settings = bpy.context.scene.bm_favorite_list_settings
+    except AttributeError:
+        return None
+    brushes_list = get_favorite_brushes()
+    fav_list_settings.clear()
+    for b in brushes_list:
+        item = fav_list_settings.add()
+        item.name = b
+        bpy.data.brushes[b].use_fake_user = True
+
+
+class WM_OT_Save_Favorites_to_current_file(Operator):
+    bl_label = 'Save the Favorites to the Current File'
+    bl_idname = 'wm.save_favorites_to_current_file'
+    bl_description = "Save the favorites list of brushes to the current file"
+
+    def execute(self, context):
+        save_favorites_to_current_file()
+        self.report({'INFO'}, "Favorites List Saved")
+
+        return {'FINISHED'}
+
+
 class WM_OT_Save_Active_Brush(Operator):
     bl_label = 'Save Brush'
     bl_idname = 'wm.save_active_brush'
@@ -1099,10 +1130,6 @@ class WM_OT_Save_Active_Brush(Operator):
     filepath: bpy.props.StringProperty(
         subtype="FILE_PATH"
     )
-
-    @classmethod
-    def poll(cls, context):
-        return context.object is not None
 
     def execute(self, context):
         if self.filepath.endswith(".blend"):
@@ -1218,7 +1245,9 @@ class WM_MT_BrushManager_Ops(Menu):
         row.prop(props, "set_force_brush_custom_icon")
         layout.operator("wm.set_icon_to_active_brush", icon='FILE_IMAGE')
         layout.separator()
-        layout.operator("wm.save_active_brush", text='Save the Active Brush to a File', icon='FILE_BLANK')
+        layout.operator("wm.save_favorites_to_current_file", icon='FILE_BLEND')
+        layout.operator("wm.load_favorites_from_current_file", icon='FILE_BLEND')
+        layout.operator("wm.save_active_brush", text='Save the Active Brush to a File', icon='FILE')
         layout.operator("wm.save_favorites", text='Save the Favorites to a File', icon='EXPORT')
         layout.operator("wm.append_from_a_file_to_favorites", text='Append from a File to the Favorites', icon='IMPORT')
         layout.separator()
@@ -1382,6 +1411,11 @@ class BrushManager_Preferences(AddonPreferences):
  to the selected brush even if it has been applied already. It can be accessed in the panel menu",
         update=update_pref_force_apply_theme_to_sel
     )
+    save_favorites_list: BoolProperty(
+        name="Save Favorites List to the Current File",
+        default=False,
+        description="On Save include the favorites brushes in the current file data and memorize the current favorites list"
+    )
     switch_mode_on_save: BoolProperty(
         name="Switch Mode on Save",
         default=False,
@@ -1439,6 +1473,8 @@ class BrushManager_Preferences(AddonPreferences):
         row.enabled = prefs.selected_brush_custom_icon
         row.prop(self, "force_brush_custom_icon")
         row = box.row()
+        row.prop(self, "save_favorites_list")
+        row = box.row()
         row.prop(self, "switch_mode_on_save")
         box = layout.box()
         box.label(text="Default Brushes List:")
@@ -1492,11 +1528,11 @@ class SCULPT_PT_Brush_Manager(Panel):
         if props.search_in_category:
             row = layout.row()
             row.prop(props, "search_bar", text='')
-            row.prop(props, "search_case_sensitive", text='', icon='FILE_TEXT')  # FILE_FONT, FILE_TEXT, 'TEXT'
+            row.prop(props, "search_case_sensitive", text='', icon='FILE_TEXT')
         row = layout.row()
         row.template_icon_view(
             context.window_manager, "brushes_in_files", show_labels=True,
-            scale=prefs.preview_frame_scale, scale_popup=prefs.preview_items_scale)  # scale=2,
+            scale=prefs.preview_frame_scale, scale_popup=prefs.preview_items_scale)
         row.template_icon_view(
             context.window_manager, "brushes_in_favorites", show_labels=True,
             scale=prefs.preview_frame_scale, scale_popup=prefs.preview_items_scale)
@@ -1544,6 +1580,8 @@ def brush_manager_pre_undo(dummy):
 
 def brush_manager_post_undo(dummy):
     props = bpy.context.window_manager.brush_manager_props
+    if not props.brush_manager_init:
+        return None
     if bpy.context.mode != 'SCULPT' and not props.post_undo_last:
         props.post_undo_last = True
         bpy.ops.sculpt.sculptmode_toggle()
@@ -1578,6 +1616,8 @@ def brush_manager_pre_save(dummy):
     props = bpy.context.window_manager.brush_manager_props
     if props.set_default_brushes_custom_icon:
         set_toggle_default_icons(bpy.context, switch=True)
+    if prefs.save_favorites_list:
+        save_favorites_to_current_file()
     if bpy.context.mode == 'SCULPT' and prefs.switch_mode_on_save:
         bpy.ops.sculpt.sculptmode_toggle()
 
@@ -1669,6 +1709,8 @@ classes = (
     WM_OT_Delete_Active_Brush_Data,
     WM_OT_Refresh_Category_List,
     WM_OT_Save_Favorites,
+    WM_OT_Save_Favorites_to_current_file,
+    WM_OT_Load_Favorites_from_current_file,
     WM_OT_Save_Active_Brush,
     WM_OT_Open_Category_Folder,
     WM_OT_Reset_All_Default_Brushes,
@@ -1678,6 +1720,7 @@ classes = (
     SCULPT_PT_Brush_Manager,
     WM_MT_Favorite_Popup_Menu,
     Brushes_Data_Collection,
+    BM_Favorite_list_settings,
     BrushManager_Preferences,
     Manager_Scene_Properties
 )
@@ -1711,6 +1754,7 @@ def register():
     wm = bpy.types.WindowManager
     wm.brush_manager_props = PointerProperty(type=Manager_Scene_Properties)
     wm.bm_brushes_data_list = CollectionProperty(type=Brushes_Data_Collection)
+    bpy.types.Scene.bm_favorite_list_settings = bpy.props.CollectionProperty(type=BM_Favorite_list_settings)
 
     winm = bpy.context.window_manager
     keyconf = winm.keyconfigs.addon
@@ -1751,6 +1795,7 @@ def unregister():
         pass
     del bpy.types.WindowManager.brush_manager_props
     del bpy.types.WindowManager.bm_brushes_data_list
+    del bpy.types.Scene.bm_favorite_list_settings
 
 
 if __name__ == "__main__":
