@@ -32,7 +32,22 @@ Icon Themes:
 
 # Change Log:
 
-Brush Manager 1.0.5
+**Brush Manager 1.0.7**
+
+* New function added to save the Favorites list to the current file. (On Save include the favorites brushes in the current file data and memorize the current favorites list)
+* Small fixes.
+
+Menu operations added:
+
+![save_load_menu|277x355](images/save_load_menu.png) 
+
+That way you can save the list state on demand if new preference setting has not been turned on.
+
+Preference setting for auto saving the favorites list on file save:
+
+![save_fav_pref|482x396](images/save_fav_pref.png)
+
+**Brush Manager 1.0.5**
 
 - First implementation of the Popup menu with a hotkey (Alt + Space)( I'm still looking forward towards Blender 2.90 release. I hope there will be a new possibility in python API for a better version of the brushes palette.)
 
