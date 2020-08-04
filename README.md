@@ -33,6 +33,12 @@ Icon Themes:
 
 # Change Log:
 
+**Brush Manager 1.0.8**
+
+* Moved keymap for popup into the 'Sculpt' mode section. Now you can assign 'Spacebar' key only for Sculpt mode to override Preference keymap setting and it will not interfere with other modes that uses Spacebar Action ( Play, Tools, Search )
+* Added keymap menu to the add-on preferences from within Blender Keymap settings.
+![addon_keymap](images/bm_keymap_pref_sign.png) 
+
 **Brush Manager 1.0.7**
 
 * New function added to save the Favorites list to the current file. (On Save include the favorites brushes in the current file data and memorize the current favorites list)
