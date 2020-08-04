@@ -24,6 +24,7 @@ import bpy.utils.previews
 from bpy.app.handlers import persistent
 from bpy.types import Operator, Menu, Panel, PropertyGroup, AddonPreferences, Scene, WindowManager, BlendData
 from bpy.props import *
+import rna_keymap_ui
 
 try:
     Addon_Name = __name__.split('.')[1]
@@ -1476,6 +1477,36 @@ class BrushManager_Preferences(AddonPreferences):
         row.prop(self, "save_favorites_list")
         row = box.row()
         row.prop(self, "switch_mode_on_save")
+
+        box = layout.box()
+        col = box.column()
+        col.label(text="Keymap:", icon="KEYINGSET")
+
+        wm = bpy.context.window_manager
+        kc = wm.keyconfigs.user
+        old_km_name = ""
+        get_kmi_l = []
+        for km_add, kmi_add in addon_keymaps:
+            for km_con in kc.keymaps:
+                if km_add.name == km_con.name:
+                    km = km_con
+                    break
+
+            for kmi_con in km.keymap_items:
+                if kmi_add.idname == kmi_con.idname:
+                    if kmi_add.name == kmi_con.name:
+                        get_kmi_l.append((km, kmi_con))
+
+        get_kmi_l = sorted(set(get_kmi_l), key=get_kmi_l.index)
+
+        for km, kmi in get_kmi_l:
+            if not km.name == old_km_name:
+                col.label(text=str(km.name), icon="DOT")
+            col.context_pointer_set("keymap", km)
+            rna_keymap_ui.draw_kmi([], kc, km, kmi, col, 0)
+            col.separator()
+            old_km_name = km.name
+
         box = layout.box()
         box.label(text="Default Brushes List:")
         row = box.row(align=True)
@@ -1487,7 +1518,7 @@ class BrushManager_Preferences(AddonPreferences):
                 grid.prop(self, 'default_brush_' + str(i), toggle=True)
             except AttributeError:
                 continue
-        wm = bpy.context.window_manager
+        # wm = bpy.context.window_manager
         row = box.row(align=True)
         row.label(text="Custom Default Brush Slots:")
         row.prop(self, "default_brushes_custom_slots", text="")
@@ -1759,7 +1790,7 @@ def register():
     winm = bpy.context.window_manager
     keyconf = winm.keyconfigs.addon
     if keyconf:
-        keymap = keyconf.keymaps.new(name='3D View', space_type='VIEW_3D', region_type='WINDOW')
+        keymap = keyconf.keymaps.new(name='Sculpt', space_type='EMPTY', region_type='WINDOW')
         keymap_item = keymap.keymap_items.new("view3d.favorite_brushes_popup", type='SPACE', value='PRESS', alt=True)
         addon_keymaps.append((keymap, keymap_item))
 
