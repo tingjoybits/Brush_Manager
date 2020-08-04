@@ -2,10 +2,11 @@
 It also has themes for brushes preview and this add-on makes easy to apply a new themed icon for your newly created brush and for existing brushes as well.
 
 Support Blender version: **2.83**
+You can also use it for **2.90** version. It has been tested in the current build of Beta stage.
 
 # Installation
 
-- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.0.7/Brush_Manager107.zip)<- file
+- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.0.8/Brush_Manager108.zip)<- file
 - Open Blender and select Edit->Preferences
 - Click Add-ons category and then 'Install...' button
 - Select the downloaded file
