@@ -25,7 +25,7 @@ bl_info = {
     "description": "Manage and organize of the sculpt brushes library",
     "author": "TingJoyBits",
     "blender": (2, 83, 0),
-    "version": (1, 0, 8),
+    "version": (1, 0, 9),
     "location": "Sculpt Mode > Properties Editor > Active Tool tab > Brushes Panel",
     "wiki_url": "https://github.com/tingjoybits/Brush_Manager",
     "category": "Sculpting"
