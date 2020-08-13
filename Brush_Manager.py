@@ -207,13 +207,26 @@ def get_default_brushes_list(list_type='brushes'):
     return brushes
 
 
+def check_vertex_paint_brushes():
+    try:
+        check = bpy.context.preferences.experimental.use_sculpt_vertex_colors
+    except AttributeError:
+        check = False
+    if get_app_version() >= 2.90 and check:
+        return True
+    return False
+
+
 def get_current_file_brushes():
     brushes = []
     try:
         for brush in bpy.data.brushes:
             try:
-                if brush.use_paint_sculpt:
-                    brushes.append(brush.name)
+                if not brush.use_paint_sculpt:
+                    continue
+                if brush.name == 'Paint' and not check_vertex_paint_brushes():
+                    continue
+                brushes.append(brush.name)
             except AttributeError:
                 continue
     except AttributeError:
