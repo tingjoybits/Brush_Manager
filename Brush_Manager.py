@@ -1613,7 +1613,10 @@ def set_brushes_data_collection_items():
 
 
 def brush_manager_pre_undo(dummy):
-    b_preview_coll = preview_brushes_coll["main"]
+    try:
+        b_preview_coll = preview_brushes_coll["main"]
+    except KeyError:
+        return None
     b_preview_undo = preview_brushes_coll["undo"]
     b_preview_undo.my_previews = b_preview_coll.my_previews
 
@@ -1623,7 +1626,10 @@ def brush_manager_pre_undo(dummy):
 
 
 def brush_manager_post_undo(dummy):
-    props = bpy.context.window_manager.brush_manager_props
+    try:
+        props = bpy.context.window_manager.brush_manager_props
+    except AttributeError:
+        return None
     if not props.brush_manager_init:
         return None
     if bpy.context.mode != 'SCULPT' and not props.post_undo_last:
