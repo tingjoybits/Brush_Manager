@@ -16,22 +16,27 @@ You can also use it for **2.90** version. It has been tested in the current buil
 
 # Overview
 
-Main UI Panel:
+**Main UI Panel:**
 ![Panel](images/brush_manager_panel.png)
 
-Main UI Panel with the search filter turned on:
+**Main UI Panel with the search filter turned on:**
 ![Search](images/brush_manager_search_panel.png)
 
-Menu of the Brush Manager with various operations:
+**Menu of the Brush Manager with various operations:**
 ![Menu](images/brush_manager_menu.png)
 
-Add-on Preferences:
+**Add-on Preferences:**
 ![Preferences](images/brush_manager_preferences.png)
 
-Icon Themes:
+**Icon Themes:**
 ![Themes](images/brush_manager_themes.png)
 
 # Change Log:
+
+**Brush Manager 1.0.9**
+
+* Fix 'Paint' brush listing in 2.90 if experimental feature is turned off for the Sculpt Vertex Colors
+* Other small fixes
 
 **Brush Manager 1.0.8**
 
