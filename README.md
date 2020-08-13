@@ -6,7 +6,7 @@ You can also use it for **2.90** version. It has been tested in the current buil
 
 # Installation
 
-- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.0.8/Brush_Manager108.zip)<- file
+- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.0.9/Brush_Manager109.zip)<- file
 - Open Blender and select Edit->Preferences
 - Click Add-ons category and then 'Install...' button
 - Select the downloaded file
