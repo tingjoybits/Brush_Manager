@@ -5,7 +5,7 @@ Support Blender version: **2.83+**
 
 # Installation
 
-- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.0.9/Brush_Manager109.zip)<- file
+- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.1.2/Brush_Manager112.zip)<- file
 - Open Blender and select Edit->Preferences
 - Click Add-ons category and then 'Install...' button
 - Select the downloaded file
