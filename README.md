@@ -32,6 +32,24 @@ Support Blender version: **2.83+**
 
 # Change Log:
 
+**Brush Manager 1.1.2**
+- Added new Preference setting '*Popup Window Width*' that scale the size of the popup window width.
+- Added new Preference setting '*UI Panel Default Closed*' that register the UI panel closed by default. (**Important**) In order to use it properly startup file have to use factory settings for the Brushes panel
+- Added new Preference setting to load the Favorites at startup from the specified file if that list is empty in the loading file
+- New menu popup operator '*Add to the Favorites from the Category List*' that helps you to pick specific brushes from the popup Category list to append them to the Favorites list
+- New menu option '*Edit the Favorites List*' that displays remove button next to the favorite brushes. That way you can quickly remove unnecessary brushes from the list 
+- Fixed custom icon being ignored if it has relative file path.
+- Improved the Refresh button that refreshes category list icons and now for the Favorites list also
+- Other small fixes
+
+![](images/preferences112.png)
+![](images/bm_ops_menu112.png)
+
+*'Add to the Favorites from the Category List'* popup and *Edit the Favorites List*:
+
+![](images/add_from_category.png)
+![](images/edit_favorites_popup.png)
+
 **Brush Manager 1.0.9**
 
 * Fix 'Paint' brush listing in 2.90 if experimental feature is turned off for the Sculpt Vertex Colors
