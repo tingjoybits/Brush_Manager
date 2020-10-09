@@ -1563,7 +1563,6 @@ class SCULPT_PT_Brush_Manager(Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_parent_id = "VIEW3D_PT_tools_brush_select"
-    bl_options = {'HEADER_LAYOUT_EXPAND'}
 
     @classmethod
     def poll(cls, context):
@@ -1592,8 +1591,6 @@ def update_panel(self, context):
         prefs = context.preferences.addons[Addon_Name].preferences
         if prefs.ui_panel_closed:
             panel.bl_options = {'DEFAULT_CLOSED'}  # {'HIDE_HEADER'} {'DEFAULT_CLOSED'}
-        else:
-            panel.bl_options = {'HEADER_LAYOUT_EXPAND'}
         bpy.utils.register_class(panel)
 
 
