@@ -32,6 +32,14 @@ Support Blender version: **2.83+**
 
 # Change Log:
 
+**Brush Manager 1.1.4**
+- Updated the Default list of brushes for Blender 2.91. Added to themes new icons for new 'Boundary' and 'Multires Displacement Eraser' sculpt brushes.
+
+![](icon_themes/round%20basic/boundary.png)
+![](icon_themes/round%20basic/displacement_eraser.png)
+- Added new menu operation that loads the Startup Favorites list from the specified file in the add-on preferences.
+- Fixed the Default list when scripts have been reloaded
+
 **Brush Manager 1.1.2**
 - Added new Preference setting '*Popup Window Width*' that scale the size of the popup window width.
 - Added new Preference setting '*UI Panel Default Closed*' that register the UI panel closed by default. (**Important**) In order to use it properly startup file have to use factory settings for the Brushes panel
