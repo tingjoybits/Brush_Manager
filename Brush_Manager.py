@@ -31,6 +31,29 @@ try:
 except IndexError:
     Addon_Name = __name__
 
+BRUSHES_SCULPT = [
+    'Blob', 'Clay', 'Clay Strips', 'Clay Thumb', 'Cloth',
+    'Crease', 'Draw Face Sets', 'Draw Sharp', 'Elastic Deform',
+    'Fill/Deepen', 'Flatten/Contrast', 'Grab', 'Inflate/Deflate',
+    'Layer', 'Mask', 'Multi-plane Scrape', 'Nudge', 'Pinch/Magnify',
+    'Pose', 'Rotate', 'Scrape/Peaks', 'SculptDraw', 'Simplify',
+    'Slide Relax', 'Smooth', 'Snake Hook', 'Thumb'
+]
+DEF_SCULPT_TOOLS = [
+    'BLOB', 'CLAY', 'CLAY_STRIPS', 'CLAY_THUMB', 'CLOTH', 'CREASE',
+    'DRAW_FACE_SETS', 'DRAW_SHARP', 'ELASTIC_DEFORM', 'FILL', 'FLATTEN',
+    'GRAB', 'INFLATE', 'LAYER', 'MASK', 'MULTIPLANE_SCRAPE', 'NUDGE',
+    'PINCH', 'POSE', 'ROTATE', 'SCRAPE', 'DRAW', 'SIMPLIFY', 'TOPOLOGY',
+    'SMOOTH', 'SNAKE_HOOK', 'THUMB'
+]
+if bpy.app.version >= (2, 91, 0):
+    BRUSHES_SCULPT.append('Boundary')
+    BRUSHES_SCULPT.append('Multires Displacement Eraser')
+    BRUSHES_SCULPT.sort()
+    DEF_SCULPT_TOOLS.append('BOUNDARY')
+    DEF_SCULPT_TOOLS.append('DISPLACEMENT_ERASER')
+    DEF_SCULPT_TOOLS.sort()
+
 
 def text_lookup(find_string, source_text):
     if source_text.find(find_string) != -1:
@@ -186,29 +209,12 @@ def get_appended_to_current_brushes(category, directory):
     return brushes
 
 
-BRUSHES_SCULPT = [
-    'Blob', 'Clay', 'Clay Strips', 'Clay Thumb', 'Cloth',
-    'Crease', 'Draw Face Sets', 'Draw Sharp', 'Elastic Deform',
-    'Fill/Deepen', 'Flatten/Contrast', 'Grab', 'Inflate/Deflate',
-    'Layer', 'Mask', 'Multi-plane Scrape', 'Nudge', 'Pinch/Magnify',
-    'Pose', 'Rotate', 'Scrape/Peaks', 'SculptDraw', 'Simplify',
-    'Slide Relax', 'Smooth', 'Snake Hook', 'Thumb'
-]
-DEF_SCULPT_TOOLS = [
-    'BLOB', 'CLAY', 'CLAY_STRIPS', 'CLAY_THUMB', 'CLOTH', 'CREASE',
-    'DRAW_FACE_SETS', 'DRAW_SHARP', 'ELASTIC_DEFORM', 'FILL', 'FLATTEN',
-    'GRAB', 'INFLATE', 'LAYER', 'MASK', 'MULTIPLANE_SCRAPE', 'NUDGE',
-    'PINCH', 'POSE', 'ROTATE', 'SCRAPE', 'DRAW', 'SIMPLIFY', 'TOPOLOGY',
-    'SMOOTH', 'SNAKE_HOOK', 'THUMB'
-]
-
-
 def get_default_brushes_list(list_type='brushes'):
-    brushes = []
-    def_tools = []
-    if MODE == 'SCULPT':
-        brushes = BRUSHES_SCULPT
-        def_tools = DEF_SCULPT_TOOLS
+    # brushes = []
+    # def_tools = []
+    # if MODE == 'SCULPT':
+    brushes = BRUSHES_SCULPT
+    def_tools = DEF_SCULPT_TOOLS
     if list_type == 'brushes':
         return brushes
     if list_type == 'def_tools':
@@ -912,10 +918,10 @@ def get_pref_custom_def_brush_props():
 
 
 def get_pref_default_brushes(list_type=''):
-    if list_type == 'SCULPT':
-        default_brushes = BRUSHES_SCULPT
-    else:
-        default_brushes = get_default_brushes_list()
+    # if list_type == 'SCULPT':
+    #     default_brushes = BRUSHES_SCULPT
+    # else:
+    default_brushes = get_default_brushes_list()
     pref_def_brushes = get_pref_default_brush_props()
     pref_custom_def_brushes = get_pref_custom_def_brush_props()
     brushes_include = []
@@ -928,10 +934,11 @@ def get_pref_default_brushes(list_type=''):
 
 
 def get_sorted_default_brushes():
-    mode = bpy.context.mode
+    # mode = bpy.context.mode
     default_brushes = get_pref_default_brushes()
     default_brushes = filter_brushes_type(default_brushes)
-    tools = get_default_brushes_list(list_type='tools')
+    # tools = get_default_brushes_list(list_type='tools')
+    tools = get_default_brushes_list(list_type='sculpt_tools')
     current_brushes = get_current_file_brushes()
     for brush in current_brushes:
         tool = bpy.data.brushes[brush].sculpt_tool
@@ -1236,6 +1243,19 @@ class WM_OT_Load_Favorites_from_current_file(Operator):
         return {'FINISHED'}
 
 
+class WM_OT_Load_Startup_Favorites(Operator):
+    bl_label = 'Load the Startup Favorites'
+    bl_idname = 'bm.load_startup_favorites'
+    bl_description = "Load the Startup Favorites list from the specified file in the add-on preferences"
+
+    def execute(self, context):
+        brushes = get_favorite_brushes()
+        set_first_preview_item(context, brushes, wm_enum_prop='fav')
+        clear_favorites_list()
+        load_startup_favorites(MODE)
+        return {'FINISHED'}
+
+
 def store_favorites_list(list_type='SCULPT_SETTINGS'):
     fav_list = get_fav_list_type(list_type)
     if fav_list is None:
@@ -1398,8 +1418,10 @@ class WM_MT_BrushManager_Ops(Menu):
             row.prop(props, "set_force_brush_custom_icon")
         layout.operator("bm.set_icon_to_active_brush", icon='FILE_IMAGE')
         layout.separator()
-        layout.operator("bm.save_favorites_to_current_file", icon='FILE_BLEND')
+        layout.operator("bm.save_favorites_to_current_file", icon='FILE_TICK')
         layout.operator("bm.load_favorites_from_current_file", icon='FILE_BLEND')
+        if prefs.use_sculpt_startup_favorites:
+            layout.operator("bm.load_startup_favorites", icon='FILE_BLEND')
         layout.operator("bm.save_active_brush", text='Save the Active Brush to a File', icon='FILE')
         layout.operator("bm.save_favorites", text='Save the Favorites to a File', icon='EXPORT')
         layout.operator("bm.append_from_a_file_to_favorites", text='Append from a File to the Favorites', icon='IMPORT')
@@ -2157,6 +2179,7 @@ classes = (
     WM_OT_Save_Favorites,
     WM_OT_Save_Favorites_to_current_file,
     WM_OT_Load_Favorites_from_current_file,
+    WM_OT_Load_Startup_Favorites,
     WM_OT_Save_Active_Brush,
     WM_OT_Open_Category_Folder,
     WM_OT_Reset_All_Default_Brushes,
