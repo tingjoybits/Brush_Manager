@@ -136,11 +136,12 @@ def append_brushes_from_a_file(filepath):
 
 
 def append_brushes_to_current_file(directory):
+    brushes_in_files = []
     b_files = get_b_files(directory)
     for name in b_files:
         filepath = os.path.join(directory, name)
-        brushes_in_file = append_brushes_from_a_file(filepath)
-    return brushes_in_file
+        brushes_in_files += append_brushes_from_a_file(filepath)
+    return brushes_in_files
 
 
 def set_first_preview_item(context, brushes_list, wm_enum_prop='main'):
@@ -531,7 +532,8 @@ def create_default_sculpt_tools():
     except KeyError:
         pass
     init_tools = get_default_brushes_list(list_type='init_tools')
-    sculpt_tools = get_default_brushes_list(list_type='tools')
+    sculpt_tools = get_default_brushes_list(list_type='sculpt_tools')
+    # sculpt_tools = get_default_brushes_list(list_type='tools')
     current_brushes = get_current_file_brushes()
     current_tools = []
     def_stools = get_default_brushes_list(list_type='def_tools')
