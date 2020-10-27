@@ -32,6 +32,9 @@ Support Blender version: **2.83+**
 
 # Change Log:
 
+**Brush Manager 1.1.5**
+- Now properly displays all brushes in the preview category when a corresponding folder contains multiple .blend files
+
 **Brush Manager 1.1.4**
 - Updated the Default list of brushes for Blender 2.91. Added to themes new icons for new 'Boundary' and 'Multires Displacement Eraser' sculpt brushes.
 
