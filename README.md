@@ -30,26 +30,26 @@ Support Blender version: **2.83+**
 **Icon Themes:**
 ![Themes](images/brush_manager_themes.png)
 
-# Change Log:
+# Change Log
 
 **Brush Manager 1.1.7**
+
 - Added Sculpt Tools to the popup window.
 - Added new header to the popup window. The header contains three new buttons:
-	'Tools' - Show/Hide the sculpt tools.
-	'Brush Tools' - Show/Hide the sculpt brush tools.
-	'Settings' - Show preference settings of the Brush Manager add-on in a separate window.
+  - '*Tools*' - Show/Hide the sculpt tools.
+  - '*Brush Tools*' - Show/Hide the sculpt brush tools.
+  - '*Settings*' - Show preference settings of the Brush Manager add-on in a separate window.
 - Menu button moved to the Header in the popup window.
 - New Preferences settings:
-	'Hide Header in the Popup Window' - Hide header buttons in the popup window and move them into the Menu. 
-										Buttons will be moved to the Menu and the Menu button to the popup layout.
-	'Show Tools in Popup' - Show tools by default in the popup window.
-	'Brush Tools in Popup'- Show brush tools by default in the popup window.
-	'Popup Max Tool Columns' - Set a maximum number of the columns for tools in the popup window.
-	'Wide Popup Layout' - Let Tools to show on the right side of the popup layout.
-	'Wide Popup Layout Size' - Scale the size of the popup layout.
+  - '*Hide Header in the Popup Window*' - Hide header buttons in the popup window and move them into the Menu. Buttons will be moved to the Menu and the Menu button to the popup layout.
+  - '*Show Tools in Popup*' - Show tools by default in the popup window.
+  - '*Brush Tools in Popup*'- Show brush tools by default in the popup window.
+  - '*Popup Max Tool Columns*' - Set a maximum number of the columns for tools in the popup window.
+  - '*Wide Popup Layout*' - Let Tools to show on the right side of the popup layout.
+  - '*Wide Popup Layout Size*' - Scale the size of the popup layout.
 - New possibility to hide particular brush tools that have been added to Default Brushes list section of Preference settings.
-- Menu buttons 'Apply Custom Icon Theme', 'Auto Apply Theme to the Selected Brush' and 'Force to Apply Theme to the Selected Brush'
-	removed from the menu and now can be switched through 'Settings'.
+- Menu buttons '*Apply Custom Icon Theme*', '*Auto Apply Theme to the Selected Brush*' and '*Force to Apply Theme to the Selected Brush*'
+ removed from the menu and now can be switched through '*Settings*'.
 - Add to the Favorites from the Category List: Exclude brushes from the category list that are already existing in the Favorites, prevents to accidentally append duplicate brushes.
 - Fixed unable to select the brush tool if the none - brush tool is currently active.
 - Other small fixes.
