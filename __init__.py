@@ -22,13 +22,13 @@ import importlib
 
 bl_info = {
     "name": "Brush Manager",
-    "description": "Manage and organize of the sculpt brushes library",
+    "description": "Manage and organize of the brushes library",
     "author": "TingJoyBits",
     "blender": (2, 83, 0),
-    "version": (1, 1, 7),
-    "location": "Sculpt Mode > Properties Editor > Active Tool tab > Brushes Panel",
+    "version": (1, 2, 0),
+    "location": "Properties Editor > Active Tool tab > Brushes Panel",
     "wiki_url": "https://github.com/tingjoybits/Brush_Manager",
-    "category": "Sculpting"
+    "category": "Interface"
 }
 
 modules = [

@@ -20,6 +20,7 @@ import bpy
 import os
 import sys
 import subprocess
+import json
 import bpy.utils.previews
 from bpy.app.handlers import persistent
 from bpy.types import Operator, Menu, Panel, PropertyGroup, AddonPreferences, Scene, WindowManager, BlendData
@@ -32,6 +33,20 @@ try:
 except IndexError:
     Addon_Name = __name__
 
+
+def prefs():
+    return bpy.context.preferences.addons[Addon_Name].preferences
+
+
+MODE = None
+UI_MODE = False
+START_FAV_LOADED = {}
+FAV_SETTINGS_LOADED = {}
+
+SET_DEFAULT_ICONS = False
+SET_SELECTED_ICON = False
+
+
 BRUSHES_SCULPT_NAMES = [
     'Blob', 'Clay', 'Clay Strips', 'Clay Thumb', 'Cloth',
     'Crease', 'Draw Face Sets', 'Draw Sharp', 'Elastic Deform',
@@ -39,6 +54,14 @@ BRUSHES_SCULPT_NAMES = [
     'Layer', 'Mask', 'Multi-plane Scrape', 'Nudge', 'Pinch/Magnify',
     'Pose', 'Rotate', 'Scrape/Peaks', 'SculptDraw', 'Simplify',
     'Slide Relax', 'Smooth', 'Snake Hook', 'Thumb'
+]
+BRUSHES_IPAINT_NAMES = ['Clone', 'Fill', 'Mask', 'Smear', 'Soften', 'TexDraw']
+BRUSHES_IPAINT = ['Draw', 'Clone', 'Fill', 'Mask', 'Smear', 'Soften']
+
+BRUSHES_GPAINT_NAMES = [
+    'Airbrush', 'Eraser Hard', 'Eraser Point', 'Eraser Soft',
+    'Eraser Stroke', 'Fill Area', 'Ink Pen', 'Ink Pen Rough', 'Marker Bold',
+    'Marker Chisel', 'Pen', 'Pencil', 'Pencil Soft', 'Tint'
 ]
 
 BRUSHES_SCULPT = []
@@ -51,24 +74,201 @@ for item in tools:
     if item.idname.startswith("builtin_brush"):
         BRUSHES_SCULPT.append(item.label)
 BRUSHES_SCULPT.sort()
+
+BRUSHES_GPAINT = []
+tools = space_toolsystem_toolbar.VIEW3D_PT_tools_active.tools_from_context(bpy.context, 'PAINT_GPENCIL')
+for item in tools:
+    if item is None:
+        continue
+    if type(item) is tuple:
+        continue
+    if item.idname.startswith("builtin_brush"):
+        BRUSHES_GPAINT.append(item.label)
+BRUSHES_GPAINT.sort()
 del tools
 
 
-def evaluate_brush_tools():
+def evaluate_brush_tools(brushes):
     brush_tool_names = []
-    for t_label in BRUSHES_SCULPT:
+    for t_label in brushes:
         found = False
-        if t_label == 'Draw':
-            brush_tool_names.append((t_label, 'SculptDraw'))
-            continue
-        for brush in BRUSHES_SCULPT_NAMES:
-            if brush.split('/')[0] == t_label:
-                brush_tool_names.append((t_label, brush))
-                found = True
-                break
-        if not found:
+        if MODE == 'SCULPT':
+            if t_label == 'Draw':
+                brush_tool_names.append((t_label, 'SculptDraw'))
+                continue
+            for brush in BRUSHES_SCULPT_NAMES:
+                if brush.split('/')[0] == t_label:
+                    brush_tool_names.append((t_label, brush))
+                    found = True
+                    break
+            if not found:
+                brush_tool_names.append((t_label, t_label))
+        elif MODE == 'PAINT_TEXTURE':
+            if t_label == 'Draw':
+                brush_tool_names.append((t_label, 'TexDraw'))
+                continue
             brush_tool_names.append((t_label, t_label))
     return brush_tool_names
+
+
+class BM_Modes:
+
+    def __init__(self, context_mode=''):
+        if MODE:
+            self.mode = MODE
+        else:
+            self.mode = 'SCULPT'
+        if UI_MODE:
+            self.mode = 'PAINT_TEXTURE'
+        if context_mode != '':
+            self.mode = context_mode
+        self.in_modes = [
+            'SCULPT', 'PAINT_TEXTURE', 'PAINT_GPENCIL'
+        ]
+        self.mode_prefixes = {
+            'SCULPT': 's',
+            'PAINT_TEXTURE': 'ip',
+            'PAINT_GPENCIL': 'gp',
+        }
+        self.Modes = dict(
+            SCULPT={
+                'tool_settings': 'sculpt',  # context.tool_settings
+                'brush_tool': 'sculpt_tool',
+                'brush_use_mode': 'use_paint_sculpt',
+                'fav_settings': 'bm_favorite_list_settings',
+                'fav_store': 'bm_sculpt_fav_list_store',
+                'icons_folder': 'icon_themes',
+                'has_themes': True,
+                'def_brushes_tool_list': BRUSHES_SCULPT,
+            },
+            PAINT_TEXTURE={
+                'tool_settings': 'image_paint',
+                'brush_tool': 'image_tool',
+                'brush_use_mode': 'use_paint_image',
+                'fav_settings': 'bm_paint_favorite_settings',
+                'fav_store': 'bm_paint_fav_list_store',
+                'icons_folder': 'paint_icons',
+                'has_themes': False,
+                'def_brushes_tool_list': BRUSHES_IPAINT,
+            },
+            PAINT_GPENCIL={
+                'tool_settings': 'gpencil_paint',
+                'brush_tool': 'gpencil_tool',
+                'brush_use_mode': 'use_paint_grease_pencil',
+                'fav_settings': 'bm_gpaint_favorite_settings',
+                'fav_store': 'bm_gpaint_fav_list_store',
+                'icons_folder': 'gpaint_icons',
+                'has_themes': False,
+                'def_brushes_tool_list': BRUSHES_GPAINT,
+            },
+        )
+        for im in self.in_modes:
+            m = self.mode_prefixes.get(im)
+            similar_props = {
+                'pref_brush': 'default_' + m + '_brush_',
+                'pref_tool': m + '_tool_brush_',
+                'use_startup_favorites': 'use_' + m + '_startup_favorites',
+                'path_to_startup_favorites': 'path_to_' + m + '_startup_favorites',
+                'brush_library': m + '_brush_library',
+                'wide_popup_layout': 'wide_' + m + '_popup_layout',
+                'wide_popup_layout_size': 'wide_' + m + '_popup_layout_size',
+                'popup_max_tool_columns': 'popup_' + m + '_max_tool_columns',
+                'popup_width': 'popup_' + m + '_width',
+                'preview_frame_scale': 'preview_' + m + '_frame_scale',
+                'popup_items_scale': 'popup_' + m + '_items_scale',
+            }
+            self.Modes[im].update(similar_props)
+
+    def popup_items_scale(self):
+        prefs = bpy.context.preferences.addons[Addon_Name].preferences
+        return eval('prefs.' + self.Modes[self.mode].get('popup_items_scale'))
+
+    def preview_frame_scale(self):
+        prefs = bpy.context.preferences.addons[Addon_Name].preferences
+        return eval('prefs.' + self.Modes[self.mode].get('preview_frame_scale'))
+
+    def popup_width(self):
+        prefs = bpy.context.preferences.addons[Addon_Name].preferences
+        return eval('prefs.' + self.Modes[self.mode].get('popup_width'))
+
+    def popup_max_tool_columns(self):
+        prefs = bpy.context.preferences.addons[Addon_Name].preferences
+        return eval('prefs.' + self.Modes[self.mode].get('popup_max_tool_columns'))
+
+    def wide_popup_layout_size(self):
+        prefs = bpy.context.preferences.addons[Addon_Name].preferences
+        return eval('prefs.' + self.Modes[self.mode].get('wide_popup_layout_size'))
+
+    def wide_popup_layout(self):
+        prefs = bpy.context.preferences.addons[Addon_Name].preferences
+        return eval('prefs.' + self.Modes[self.mode].get('wide_popup_layout'))
+
+    def tool_settings(self, context):
+        ts = context.tool_settings
+        return eval('ts.' + self.Modes[self.mode].get('tool_settings'))
+
+    def brush_tool(self, brush):
+        return eval('brush.' + self.Modes[self.mode].get('brush_tool'))
+
+    def brush_use_mode(self, brush):
+        return eval('brush.' + self.Modes[self.mode].get('brush_use_mode'))
+
+    def def_brushes_tool_list(self):
+        return self.Modes[self.mode].get('def_brushes_tool_list')
+
+    def def_brushes_list(self):
+        if not self.mode:
+            return None
+        if self.mode == 'PAINT_GPENCIL':
+            return BRUSHES_GPAINT_NAMES
+        return [b for t, b in evaluate_brush_tools(self.def_brushes_tool_list())]
+
+    def pref_brush(self):
+        return self.Modes[self.mode].get('pref_brush')
+
+    def pref_tool(self):
+        return self.Modes[self.mode].get('pref_tool')
+
+    def brush_tool_enum_items(self):
+        enum_items = []
+        for brush in bpy.data.brushes:
+            if self.brush_use_mode(brush):
+                enum_items = brush.bl_rna.properties[
+                    self.Modes[self.mode].get('brush_tool')].enum_items
+                break
+        return enum_items
+
+    def use_startup_favorites(self):
+        prefs = bpy.context.preferences.addons[Addon_Name].preferences
+        return eval('prefs.' + self.Modes[self.mode].get('use_startup_favorites'))
+
+    def path_to_startup_favorites(self):
+        prefs = bpy.context.preferences.addons[Addon_Name].preferences
+        return eval('prefs.' + self.Modes[self.mode].get('path_to_startup_favorites'))
+
+    def icons_path(self):
+        prefs = bpy.context.preferences.addons[Addon_Name].preferences
+        folder = self.Modes[self.mode].get('icons_folder')
+        icons_path = get_icon_themes_path(folder)
+        if self.Modes[self.mode].get('has_themes'):
+            icons_path = os.path.join(icons_path, prefs.brush_icon_theme)
+        return icons_path
+
+    def fav_settings(self):
+        if not self.mode:
+            return None
+        scene = bpy.context.scene
+        return eval('scene.' + self.Modes[self.mode].get('fav_settings'))
+
+    def fav_store(self):
+        if not self.mode:
+            return None
+        wm = bpy.context.window_manager
+        return eval('wm.' + self.Modes[self.mode].get('fav_store'))
+
+    def library_path(self):
+        prefs = bpy.context.preferences.addons[Addon_Name].preferences
+        return eval('prefs.' + self.Modes[self.mode].get('brush_library'))
 
 
 def text_lookup(find_string, source_text):
@@ -100,21 +300,23 @@ def get_brushes_in_files(directory, b_files):
 def get_library_directory(context):
     props = context.window_manager.brush_manager_props
     prefs = bpy.context.preferences.addons[Addon_Name].preferences
-    lib_path = prefs.brush_library
+    modes = BM_Modes()
+    lib_path = modes.library_path()
     directory = os.path.join(lib_path, props.lib_categories)
     return directory
 
 
 def get_active_brush(context):
-    if context.mode == 'SCULPT':
-        return context.tool_settings.sculpt.brush
+    modes = BM_Modes()
+    ts = modes.tool_settings(context)
+    return ts.brush
 
 
 def check_brush_type(brush, mode=''):
     if mode == '':
         mode = bpy.context.mode
-    if mode == 'SCULPT':
-        return brush.use_paint_sculpt
+    modes = BM_Modes(mode)
+    return modes.brush_use_mode(brush)
 
 
 def get_append_brushes(directory, b_files, exclude_default=True):
@@ -130,8 +332,8 @@ def get_append_brushes(directory, b_files, exclude_default=True):
         except KeyError:
                 continue
         brushes_append.append(brush)
-        brushes_append = list(set(brushes_append))
-        brushes_append.sort()
+    brushes_append = list(set(brushes_append))
+    brushes_append.sort()
     return brushes_append
 
 
@@ -182,11 +384,13 @@ def update_category(self, context):
     wm = bpy.context.window_manager
     props = wm.brush_manager_props
     if props.lib_categories == 'Default' and\
-            context.mode == 'SCULPT':
+            context.mode == 'SCULPT' and not UI_MODE:
         create_default_sculpt_tools()
+    set_ui_mode(context)
     update_brush_list(self, context)
     update_fav_list(self, context)
-    set_toggle_default_icons(context)
+    if context.mode == 'SCULPT':
+        set_toggle_default_icons(context)
 
 
 def update_brush_list(self, context):
@@ -201,6 +405,37 @@ def update_fav_list(self, context):
     set_first_preview_item(context, fav_brushes, wm_enum_prop='fav')
     b_preview_coll = preview_brushes_coll["favorites"]
     b_preview_coll.my_previews_dir = ""
+
+
+def lib_category_folders(self, context):
+    prefs = context.preferences.addons[Addon_Name].preferences
+    modes = BM_Modes()
+    lib_path = modes.library_path()
+    default_list = ['Default', 'Current File']
+    folders = get_folders_contains_files(lib_path, ".blend")
+    folders_list = default_list + folders
+
+    return [(name, name, "") for name in folders_list]
+
+
+class WM_OT_Set_Category(Operator):
+    bl_label = 'BM Set Category'
+    bl_idname = 'bm.set_brushes_category'
+    bl_description = "Select the category for the brushes preview"
+    bl_options = {'UNDO'}
+
+    lib_category: EnumProperty(
+        name='Category',
+        items=lib_category_folders,
+        description='The library category that contain the list of brushes existing in the blender file data'
+    )
+
+    def execute(self, context):
+        wm = bpy.context.window_manager
+        props = wm.brush_manager_props
+        props.lib_categories = self.lib_category
+
+        return {'FINISHED'}
 
 
 def filter_brushes_type(brushes_list, mode=''):
@@ -226,28 +461,19 @@ def get_appended_to_current_brushes(category, directory):
     return brushes
 
 
-def get_default_brushes_list(list_type='brushes'):
-    # brushes = []
-    # if MODE == 'SCULPT':
-    # brushes = BRUSHES_SCULPT
-    brushes = [b for t, b in evaluate_brush_tools()]
+def get_default_brushes_list(list_type='brushes', mode=''):
+    if mode != '':
+        modes = BM_Modes(mode)
+    else:
+        modes = BM_Modes()
     if list_type == 'brushes':
+        brushes = modes.def_brushes_list()
         return brushes
-    if list_type == 'slot_brushes':
-        tool_slots = bpy.context.tool_settings.sculpt.tool_slots
-        slot_brushes = []
-        for i, ts in enumerate(tool_slots):
-            if i == 0:
-                continue
-            slot_brushes.append(ts.brush.name)
-        slot_brushes.sort()
-        return slot_brushes
-    if list_type == 'init_tools' or list_type == 'tools' or list_type == 'sculpt_tools':
-        enum_items = []
-        for brush in bpy.data.brushes:
-            if (MODE == 'SCULPT' or list_type == 'sculpt_tools') and brush.use_paint_sculpt:
-                enum_items = brush.bl_rna.properties['sculpt_tool'].enum_items
-                break
+    if list_type == 'init_tools' or list_type == 'tools':
+        enum_items = modes.brush_tool_enum_items()
+    if list_type == 'sculpt_tools':
+        modes.mode = 'SCULPT'
+        enum_items = modes.brush_tool_enum_items()
     if list_type == 'init_tools':
         init_tools = dict([(b.identifier, b.name) for b in enum_items])
         return init_tools
@@ -255,7 +481,6 @@ def get_default_brushes_list(list_type='brushes'):
         tools = [t.identifier for t in enum_items]
         tools.sort()
         return tools
-    return brushes
 
 
 def check_vertex_paint_brushes():
@@ -289,22 +514,11 @@ def get_current_file_brushes(mode=''):
 def get_brushes_from_preview_enums(enum_items, list_type='brushes'):
     brushes_list = []
     icons = []
-    enum_iconless = []
-    edit = []
     for name1, name2, blank, iconid, index in enum_items:
         brushes_list.append(name1)
         icons.append(iconid)
-        enum_iconless.append((name1, name2, '', index))
-        if list_type == 'edit':
-            edit.append((name1, '', '', 'REMOVE', index))
-        if list_type == 'add':
-            edit.append((name1, '', '', 'ADD', index))
     if list_type == 'icons':
         return icons
-    if list_type == 'enum':
-        return enum_iconless
-    if list_type == 'edit' or list_type == 'add':
-        return edit
     return brushes_list
 
 
@@ -323,11 +537,6 @@ def get_favorite_brushes(list_type='brushes'):
     preview_enums = b_preview_coll.my_previews
     b_preview_coll.my_previews_dir = "favorites"
     return get_brushes_from_preview_enums(preview_enums, list_type)
-
-
-def get_favorite_brushes_popup(self, context):
-    return get_favorite_brushes(list_type='enum')
-    # return preview_brushes_coll["favorites"].my_previews
 
 
 def add_to_fav_active_current_brush(context, brushes_list):
@@ -354,11 +563,9 @@ def clear_Default_list():
     b_preview_coll = preview_brushes_coll["main"]
     if props.lib_categories != "Default":
         return None
-    # brushes = get_sorted_default_brushes()
     enum_items = []
     if len(b_preview_coll.my_previews) > 0:
         b_preview_coll.my_previews.clear()
-    # enum_items = create_enum_list(bpy.context, brushes, b_preview_coll, update_icon=True)
     b_preview_coll.my_previews = enum_items
 
 
@@ -402,16 +609,6 @@ def get_folders_contains_files(root_folder_path, file_extension=".blend"):
     return folders_list
 
 
-def lib_category_folders(self, context):
-    prefs = context.preferences.addons[Addon_Name].preferences
-    lib_path = prefs.brush_library
-    default_list = ['Default', 'Current File']
-    folders = get_folders_contains_files(lib_path, ".blend")
-    folders_list = default_list + folders
-
-    return [(name, name, "") for name in folders_list]
-
-
 def filter_brushes_by_name(brushes_list, name):
     props = bpy.context.window_manager.brush_manager_props
     filtered_brushes_list = []
@@ -433,11 +630,11 @@ def get_icon_themes_path(folder_name='icon_themes'):
     return icon_themes_path
 
 
-def get_icons_path():
-    prefs = bpy.context.preferences.addons[Addon_Name].preferences
-    icon_themes_path = get_icon_themes_path()
-    icons_path = os.path.join(icon_themes_path, prefs.brush_icon_theme)
-    return icons_path
+def get_icons_path(mode=''):
+    if mode == '':
+        mode = MODE
+    modes = BM_Modes(mode)
+    return modes.icons_path()
 
 
 def set_brush_icon_themes(self, context):
@@ -461,8 +658,12 @@ def set_active_tool(tool_name):
 
 
 def get_icon_name(context, brush_name):
-    if context.mode == 'SCULPT':
-        return bpy.data.brushes[brush_name].sculpt_tool.lower() + '.png'
+    brush = bpy.data.brushes[brush_name]
+    if context.mode == 'PAINT_GPENCIL':
+        return brush.name.lower() + '.png'
+    else:
+        modes = BM_Modes()
+        return modes.brush_tool(brush).lower() + '.png'
 
 
 def create_thumbnail_icon(context, brush_name, b_preview_coll):
@@ -470,10 +671,19 @@ def create_thumbnail_icon(context, brush_name, b_preview_coll):
     icon_name = get_icon_name(context, brush_name)
     filepath = os.path.join(icons_path, icon_name)
     if not os.path.isfile(filepath):
-        icon_name = 'NA_brush.png'
+        modes = modes = BM_Modes()
+        if context.mode == 'PAINT_GPENCIL':
+            for gpbrush in BRUSHES_GPAINT_NAMES:
+                if text_lookup(gpbrush.split(' ')[0], bpy.data.brushes[brush_name].name):
+                    icon_name = bpy.data.brushes[gpbrush].name.lower() + '.png'
+                    break
+        if not os.path.isfile(os.path.join(icons_path, icon_name)):
+            icon_name = modes.brush_tool(bpy.data.brushes[brush_name]).lower() + '.png'
+        if not os.path.isfile(os.path.join(icons_path, icon_name)):
+            icon_name = 'NA_brush.png'
         filepath = os.path.join(icons_path, icon_name)
-    thumb = b_preview_coll.load(context.mode + '_' + brush_name, filepath, 'IMAGE')
-    return thumb
+    thumb = b_preview_coll.load(MODE + '_' + brush_name, filepath, 'IMAGE')
+    return thumb.icon_id
 
 
 def create_enum_list(context, brushes, b_preview_coll, update_icon=False):
@@ -491,39 +701,47 @@ def create_enum_list(context, brushes, b_preview_coll, update_icon=False):
         if update_icon:
             icon = False
         else:
-            icon = b_preview_coll.get(context.mode + '_' + brush)
+            if UI_MODE:
+                icon = b_preview_coll.get('PAINT_TEXTURE' + '_' + brush)
+            else:
+                icon = b_preview_coll.get(context.mode + '_' + brush)
         if not icon:
             if bpy.data.brushes[brush].use_custom_icon:
                 filepath = bpy.data.brushes[brush].icon_filepath
                 if os.path.isfile(bpy.path.abspath(filepath)):
                     thumb = bpy.data.brushes[brush].preview.icon_id
                 else:
-                    thumb = create_thumbnail_icon(context, brush, b_preview_coll).icon_id
+                    thumb = create_thumbnail_icon(context, brush, b_preview_coll)
             else:
-                thumb = create_thumbnail_icon(context, brush, b_preview_coll).icon_id
+                thumb = create_thumbnail_icon(context, brush, b_preview_coll)
         else:
-            thumb = b_preview_coll[context.mode + '_' + brush].icon_id
+            if UI_MODE:
+                thumb = b_preview_coll['PAINT_TEXTURE' + '_' + brush].icon_id
+            else:
+                thumb = b_preview_coll[context.mode + '_' + brush].icon_id
         enum_items.append((brush, brush, "", thumb, index))
     return enum_items
 
 
 def reset_all_default_brushes(context):
+    if contex.mode != 'SCULPT':
+        return None
     props = context.window_manager.brush_manager_props
     def_brushes = get_sorted_default_brushes()
     active_brush = get_active_brush(context)
     for brush in def_brushes:
         try:
-            context.tool_settings.sculpt.brush = bpy.data.brushes[brush]
+            set_brush_tool(None, context, bpy.data.brushes[brush])
         except KeyError:
             pass
         bpy.ops.brush.reset()
         if props.set_default_brushes_custom_icon:
             bpy.data.brushes[brush].use_custom_icon = True
-    context.tool_settings.sculpt.brush = active_brush
+    set_brush_tool(None, context, active_brush)
 
 
 def create_default_sculpt_tools():
-    if bpy.context.mode != 'SCULPT':
+    if bpy.context.mode != 'SCULPT' or UI_MODE:
         return None
     props = bpy.context.window_manager.brush_manager_props
     if bpy.data.scenes[0].name == 'Empty':
@@ -544,6 +762,7 @@ def create_default_sculpt_tools():
     for tool in sculpt_tools:
         if tool in current_tools:
             continue
+        # print('INIT TOOL:', tool)
         if init_tools.get(tool) not in BRUSHES_SCULPT and\
                 not check_vertex_paint_brushes():
             continue
@@ -570,32 +789,30 @@ def check_current_file_brush_icons():
         bpy.data.brushes[brush].use_custom_icon = False
 
 
-SCULPT_START_FAV_LOADED = False
-
-
 def load_startup_favorites(list_type='SCULPT'):
     prefs = bpy.context.preferences.addons[Addon_Name].preferences
-    if not prefs.use_sculpt_startup_favorites:
+    modes = BM_Modes(list_type)
+    if not modes.use_startup_favorites():
         return None
     if get_favorite_brushes():
         return None
-    filepath = prefs.path_to_sculpt_startup_favorites
-    if not os.path.isfile(filepath):
+    path = modes.path_to_startup_favorites()
+    if not os.path.isfile(path):
         return None
-    if os.path.basename(filepath).split('.')[-1] != 'blend':
+    if os.path.basename(path).split('.')[-1] != 'blend':
         return None
     b_preview_fav = preview_brushes_coll["favorites"]
     b_preview_fav.my_previews_dir = "favorites"
-    append_brushes_from_a_file(filepath)
+    append_brushes_from_a_file(path)
     brushes_in_file = get_append_brushes(
-        os.path.dirname(filepath), b_files=[os.path.basename(filepath)],
+        os.path.dirname(path), b_files=[os.path.basename(path)],
         exclude_default=False
     )
     brushes_in_file.sort()
     enum_items = create_enum_list(bpy.context, brushes_in_file, b_preview_fav)
     b_preview_fav.my_previews = enum_items
-    global SCULPT_START_FAV_LOADED
-    SCULPT_START_FAV_LOADED = True
+    global START_FAV_LOADED
+    START_FAV_LOADED[list_type] = True
     return True
 
 
@@ -607,9 +824,6 @@ def handler_check(handler, function_name):
         if func == function_name:
             return True
     return False
-
-
-MODE = 'NONE'
 
 
 def initialize_brush_manager_ui(props, b_preview_coll):
@@ -632,7 +846,10 @@ def initialize_brush_manager_ui(props, b_preview_coll):
         props.manager_empty_init = True
     b_preview_coll.my_previews_dir = ""
     global MODE
-    MODE = bpy.context.mode
+    if UI_MODE:
+        MODE = 'PAINT_TEXTURE'
+    else:
+        MODE = bpy.context.mode
     clear_favorites_list()
     clear_Default_list()
     create_default_sculpt_tools()
@@ -644,6 +861,7 @@ def initialize_brush_manager_ui(props, b_preview_coll):
         props.set_selected_brush_custom_icon = True
     if prefs.force_brush_custom_icon and not props.set_force_brush_custom_icon:
         props.set_force_brush_custom_icon = True
+    switch_icons()
     update_tools_popup(None, bpy.context)
     update_brush_tools_popup(None, bpy.context)
 
@@ -705,12 +923,18 @@ def SelectBrushError(self, context):
     self.layout.label(text=msg)
 
 
-def set_brush_tool(context, brush):
+def set_brush_tool(self, context, brush):
+    modes = BM_Modes()
     init_tools = get_default_brushes_list(list_type='init_tools')
-    if context.mode == 'SCULPT':
-        tool_name = init_tools.get(brush.sculpt_tool)
-        context.tool_settings.sculpt.brush = brush
-    set_active_tool("builtin_brush." + tool_name)
+
+    tool_name = init_tools.get(modes.brush_tool(brush))
+    if not hasattr(self, 'no_tool'):
+        set_active_tool("builtin_brush." + tool_name)
+    else:
+        if not self.no_tool:
+            set_active_tool("builtin_brush." + tool_name)
+    tool_settings_mode = modes.tool_settings(context)
+    tool_settings_mode.brush = brush
 
 
 def set_brush_from_lib_list(self, context):
@@ -718,9 +942,12 @@ def set_brush_from_lib_list(self, context):
     if props.skip_brush_set:
         props.skip_brush_set = False
         return None
-    selected_brush = context.window_manager.brushes_in_files
+    if hasattr(self, 'brush'):
+        selected_brush = self.brush
+    else:
+        selected_brush = context.window_manager.brushes_in_files
     try:
-        set_brush_tool(context, bpy.data.brushes[selected_brush])
+        set_brush_tool(self, context, bpy.data.brushes[selected_brush])
     except KeyError:
         context.window_manager.popup_menu(SelectBrushError, title="Error", icon="INFO")
         update_brush_list(self, context)
@@ -740,7 +967,7 @@ def set_brush_from_fav_list(self, context):
         return None
     selected_brush = context.window_manager.brushes_in_favorites
     try:
-        set_brush_tool(context, bpy.data.brushes[selected_brush])
+        set_brush_tool(self, context, bpy.data.brushes[selected_brush])
     except KeyError:
         context.window_manager.popup_menu(SelectBrushError, title="Error", icon="INFO")
         remove_active_brush_favorite(self, context)
@@ -755,29 +982,15 @@ def set_brush_from_fav_list(self, context):
 
 def set_brush_from_fav_popup(self, context):
     props = context.window_manager.brush_manager_props
-    selected_brush = context.window_manager.fav_brush_popup
+    if hasattr(self, 'brush'):
+        selected_brush = self.brush
+    else:
+        selected_brush = context.window_manager.fav_brush_popup
     try:
-        set_brush_tool(context, bpy.data.brushes[selected_brush])
+        set_brush_tool(self, context, bpy.data.brushes[selected_brush])
     except KeyError:
         context.window_manager.popup_menu(SelectBrushError, title="Error", icon="INFO")
         remove_active_brush_favorite(self, context, fav_type='popup')
-        return None
-    if bpy.data.brushes[selected_brush].use_custom_icon and not props.set_force_brush_custom_icon:
-        return None
-    if props.set_selected_brush_custom_icon:
-        icons_path = get_icons_path()
-        set_custom_icon(icons_path, selected_brush)
-    return None
-
-
-def set_brush_from_add_fav_popup(self, context):
-    props = context.window_manager.brush_manager_props
-    selected_brush = self.brushes
-    try:
-        set_brush_tool(context, bpy.data.brushes[selected_brush])
-    except KeyError:
-        context.window_manager.popup_menu(SelectBrushError, title="Error", icon="INFO")
-        update_brush_list(self, context)
         return None
     if bpy.data.brushes[selected_brush].use_custom_icon and not props.set_force_brush_custom_icon:
         return None
@@ -801,13 +1014,60 @@ def set_custom_icon(icons_path, brush_name):
     brush.icon_filepath = filepath
 
 
+class WM_OT_Select_Brush(Operator):
+    bl_label = 'Select Brush'
+    bl_idname = 'bm.select_brush'
+    bl_description = "Select brush to make it active"
+    bl_options = {'UNDO'}
+
+    brush: bpy.props.StringProperty()
+    from_list: bpy.props.StringProperty()
+    no_tool: bpy.props.BoolProperty()
+
+    def execute(self, context):
+        if self.from_list == 'add_brush_popup':
+            set_brush_from_lib_list(self, context)
+        else:
+            set_brush_from_fav_popup(self, context)
+
+        if prefs().close_popup_on_select:
+            popup_close()
+        return {'FINISHED'}
+
+
+class WM_OT_Set_Select_Brush(Operator):
+    bl_label = 'Select Brush'
+    bl_idname = 'bm.set_brush'
+    bl_description = "Select brush to make it active"
+    # bl_options = {'UNDO'}
+
+    brush: bpy.props.StringProperty()
+    from_list: bpy.props.StringProperty()
+
+    def execute(self, context):
+        if self.from_list == 'add_brush_popup':
+            set_brush_from_lib_list(self, context)
+        else:
+            set_brush_from_fav_popup(self, context)
+
+        if prefs().close_popup_on_select:
+            popup_close()
+        return {'FINISHED'}
+
+
 def update_pref_apply_theme_to_def(self, context):
+    global SET_DEFAULT_ICONS
+    global SET_SELECTED_ICON
     prefs = context.preferences.addons[Addon_Name].preferences
     props = context.window_manager.brush_manager_props
     if not props.set_default_brushes_custom_icon and prefs.default_brushes_custom_icon:
         props.set_default_brushes_custom_icon = True
     if props.set_default_brushes_custom_icon and not prefs.default_brushes_custom_icon:
         props.set_default_brushes_custom_icon = False
+    if prefs.default_brushes_custom_icon:
+        SET_DEFAULT_ICONS = True
+    else:
+        SET_DEFAULT_ICONS = False
 
 
 def update_pref_apply_theme_to_selected(self, context):
@@ -855,7 +1115,13 @@ def update_tools_popup(self, context):
         props.popup_tools_switch = False
 
 
+LOADING_SETTINGS = False
+
+
 def set_toggle_default_icons(context, switch=False):
+    if context.mode != 'SCULPT' and LOADING_SETTINGS:
+        return None
+    global SET_DEFAULT_ICONS
     prefs = context.preferences.addons[Addon_Name].preferences
     props = context.window_manager.brush_manager_props
     icon_themes_path = get_icon_themes_path()
@@ -864,33 +1130,52 @@ def set_toggle_default_icons(context, switch=False):
     if props.set_default_brushes_custom_icon and not switch:
         for brush in default_brushes:
             set_custom_icon(icons_path, brush)
+        SET_DEFAULT_ICONS = True
     else:
         for brush in default_brushes:
             bpy.data.brushes[brush].use_custom_icon = False
             bpy.data.brushes[brush].icon_filepath = ''
+        SET_DEFAULT_ICONS = False
 
 
 def update_default_icons(self, context):
     set_toggle_default_icons(context)
 
 
+def update_sel_brush_custom_icon(self, context):
+    global SET_SELECTED_ICON
+    props = context.window_manager.brush_manager_props
+    if props.set_selected_brush_custom_icon:
+        SET_SELECTED_ICON = True
+    else:
+        SET_SELECTED_ICON = False
+
+
 def update_icon_theme(self, context):
     props = context.window_manager.brush_manager_props
     props.lib_categories = "Current File"
+    is_theme = props.set_default_brushes_custom_icon
+    popup_close()
+    if props.set_default_brushes_custom_icon:
+        props.set_default_brushes_custom_icon = False
     global UPDATE_ICONS
     UPDATE_ICONS = True
     update_category(self, context)
+    if is_theme:
+        props.set_default_brushes_custom_icon = True
 
 
 def update_pref_def_brush(self, context):
+    if context.mode != 'SCULPT':
+        return None
     props = context.window_manager.brush_manager_props
-    default_brushes = get_default_brushes_list()
-    pref_def_brushes = get_pref_default_brush_props()
+    default_brushes = get_default_brushes_list(mode='SCULPT')
+    pref_def_brushes = get_pref_default_brush_props(mode='SCULPT')
     for brush in default_brushes:
         if pref_def_brushes.get(brush):
             if not props.set_default_brushes_custom_icon:
                 continue
-            icons_path = get_icons_path()
+            icons_path = get_icons_path('SCULPT')
             set_custom_icon(icons_path, brush)
             continue
         try:
@@ -910,6 +1195,8 @@ def remove_fav_brush(self, context, remove_brushes):
         try:
             brushes.remove(b)
         except ValueError:
+            # msg = "Brush Manager: Nothing to remove"
+            # self.report({'ERROR'}, msg)
             return None
     enum_items = create_enum_list(context, brushes, b_preview_coll)
     b_preview_coll.my_previews = enum_items
@@ -919,29 +1206,39 @@ def remove_active_brush_favorite(self, context, fav_type='preview'):
     if fav_type == 'preview':
         active_brush = context.window_manager.brushes_in_favorites
     if fav_type == 'popup':
-        active_brush = context.window_manager.fav_brush_popup
+        active_brush = get_active_brush(context).name
     remove_fav_brush(self, context, [active_brush])
 
 
-def get_pref_default_brush_props(list_type=''):
+def get_pref_default_brush_props(list_type='', mode=''):
     prefs = bpy.context.preferences.addons[Addon_Name].preferences
+    if mode == '':
+        mode = MODE
+
+    modes = BM_Modes(mode)
     if list_type == 'tools':
-        props_list = [pr for pr in prefs.__annotations__ if pr.startswith("tool_brush_")]
+        props_list = [pr for pr in prefs.__annotations__ if pr.startswith(modes.pref_tool())]
     else:
-        props_list = [pr for pr in prefs.__annotations__ if pr.startswith("default_brush_")]
-    b_tools = dict(evaluate_brush_tools())
+        props_list = [pr for pr in prefs.__annotations__ if pr.startswith(modes.pref_brush())]
+    b_tools = dict(evaluate_brush_tools(modes.def_brushes_tool_list()))
+
     props_values = []
     for pr in props_list:
         b_name = prefs.__annotations__.get(pr)[1].get('name')
         if list_type == 'tools':
             exec("props_values.append((b_name, prefs." + pr + "))")
         else:
-            exec("props_values.append((b_tools.get(b_name), prefs." + pr + "))")
+            if mode == 'PAINT_GPENCIL':
+                exec("props_values.append((b_name, prefs." + pr + "))")
+            else:
+                exec("props_values.append((b_tools.get(b_name), prefs." + pr + "))")
     props_values = dict(props_values)
     return props_values
 
 
-def get_pref_custom_def_brush_props():
+def get_pref_custom_def_brush_props(list_type=''):
+    if list_type != 'SCULPT':
+        return []
     prefs = bpy.context.preferences.addons[Addon_Name].preferences
     custom_props_list = [pr for pr in prefs.__annotations__ if pr.startswith("add_def_brush_")]
     props_values = []
@@ -951,12 +1248,9 @@ def get_pref_custom_def_brush_props():
 
 
 def get_pref_default_brushes(list_type=''):
-    # if list_type == 'SCULPT':
-    #     default_brushes = BRUSHES_SCULPT
-    # else:
-    default_brushes = get_default_brushes_list()
-    pref_def_brushes = get_pref_default_brush_props()
-    pref_custom_def_brushes = get_pref_custom_def_brush_props()
+    default_brushes = get_default_brushes_list(mode=list_type)
+    pref_def_brushes = get_pref_default_brush_props(mode=list_type)
+    pref_custom_def_brushes = get_pref_custom_def_brush_props(list_type)
     brushes_include = []
     for brush in default_brushes:
         if not pref_def_brushes.get(brush):
@@ -966,15 +1260,17 @@ def get_pref_default_brushes(list_type=''):
     return brushes_include
 
 
-def get_sorted_default_brushes():
-    # mode = bpy.context.mode
-    default_brushes = get_pref_default_brushes()
-    default_brushes = filter_brushes_type(default_brushes)
-    # tools = get_default_brushes_list(list_type='tools')
-    tools = get_default_brushes_list(list_type='sculpt_tools')
-    current_brushes = get_current_file_brushes()
+def get_sorted_default_brushes(list_type=''):
+    default_brushes = get_pref_default_brushes(list_type)
+    default_brushes = filter_brushes_type(default_brushes, list_type)
+    current_brushes = get_current_file_brushes(list_type)
+    if list_type == 'SCULPT':
+        tools = get_default_brushes_list(list_type='sculpt_tools')
+    else:
+        tools = get_default_brushes_list(list_type='tools')
+    modes = BM_Modes(list_type)
     for brush in current_brushes:
-        tool = bpy.data.brushes[brush].sculpt_tool
+        tool = modes.brush_tool(bpy.data.brushes[brush])
         if tool in tools:
             continue
         default_brushes.append(brush)
@@ -1225,25 +1521,21 @@ class WM_OT_Save_Favorites(Operator):
         return {'RUNNING_MODAL'}
 
 
-def get_fav_list_type(list_type):
-    fav_list = None
+def get_fav_list_type(mode, list_type):
     try:
-        if list_type == 'SCULPT_SETTINGS':
-            fav_list = bpy.context.scene.bm_favorite_list_settings
-        if list_type == 'SCULPT':
-            fav_list = bpy.context.window_manager.bm_sculpt_fav_list_store
-        return fav_list
+        modes = BM_Modes(mode)
+        if list_type == 'SETTINGS':
+            return modes.fav_settings()
+        elif list_type == 'STORE':
+            return modes.fav_store()
     except AttributeError:
         return None
 
 
-SCULPT_SETTINGS_LOADED = False
-
-
-def load_saved_favorites_list(list_type='SCULPT_SETTINGS'):
-    global SCULPT_SETTINGS_LOADED
-    global SCULPT_START_FAV_LOADED
-    fav_list = get_fav_list_type(list_type)
+def load_saved_favorites_list(mode='SCULPT', list_type='SETTINGS'):
+    global FAV_SETTINGS_LOADED
+    global START_FAV_LOADED
+    fav_list = get_fav_list_type(mode, list_type)
     if fav_list is None:
         return None
     b_preview_fav = preview_brushes_coll["favorites"]
@@ -1251,10 +1543,10 @@ def load_saved_favorites_list(list_type='SCULPT_SETTINGS'):
     brushes = [i.name for i in fav_list]
     enum_items = create_enum_list(bpy.context, brushes, b_preview_fav)
     b_preview_fav.my_previews = enum_items
-    if list_type == 'SCULPT_SETTINGS':
-        SCULPT_SETTINGS_LOADED = True
-        if brushes:
-            SCULPT_START_FAV_LOADED = True
+
+    FAV_SETTINGS_LOADED[mode] = True
+    if brushes:
+        START_FAV_LOADED[mode] = True
     return brushes
 
 
@@ -1271,7 +1563,7 @@ class WM_OT_Load_Favorites_from_current_file(Operator):
         brushes = get_favorite_brushes()
         set_first_preview_item(context, brushes, wm_enum_prop='fav')
         clear_favorites_list()
-        load_saved_favorites_list('SCULPT_SETTINGS')
+        load_saved_favorites_list(MODE, 'SETTINGS')
 
         return {'FINISHED'}
 
@@ -1289,8 +1581,8 @@ class WM_OT_Load_Startup_Favorites(Operator):
         return {'FINISHED'}
 
 
-def store_favorites_list(list_type='SCULPT_SETTINGS'):
-    fav_list = get_fav_list_type(list_type)
+def store_favorites_list(mode='SCULPT', list_type='SETTINGS'):
+    fav_list = get_fav_list_type(mode, list_type)
     if fav_list is None:
         return None
     brushes_list = get_favorite_brushes()
@@ -1298,7 +1590,7 @@ def store_favorites_list(list_type='SCULPT_SETTINGS'):
     for b in brushes_list:
         item = fav_list.add()
         item.name = b
-        if list_type.split('_')[-1] == 'SETTINGS':
+        if list_type == 'SETTINGS':
             bpy.data.brushes[b].use_fake_user = True
 
 
@@ -1308,7 +1600,7 @@ class WM_OT_Save_Favorites_to_current_file(Operator):
     bl_description = "Save the favorites list of brushes to the current file"
 
     def execute(self, context):
-        store_favorites_list('SCULPT_SETTINGS')
+        store_favorites_list(MODE, 'SETTINGS')
         self.report({'INFO'}, "Favorites List Saved")
 
         return {'FINISHED'}
@@ -1384,6 +1676,10 @@ class WM_OT_Reset_All_Default_Brushes(Operator):
 
 def icon_directory_paths(self, context):
     paths = []
+    paint_icons_path = os.path.join(get_icon_themes_path('paint_icons'), 'custom_icons')
+    gpaint_icons_path = os.path.join(get_icon_themes_path('gpaint_icons'), 'custom_icons')
+    paths.append((paint_icons_path, 'paint_icons', ''))
+    paths.append((gpaint_icons_path, 'gpaint_icons', ''))
     icon_themes_path = get_icon_themes_path()
     folders = get_folders_contains_files(icon_themes_path, ".png")
     for folder in folders:
@@ -1441,55 +1737,48 @@ class WM_MT_BrushManager_Ops(Menu):
         if prefs.move_add_to_favorite_op:
             layout.operator('bm.add_brush_to_favorites', icon='ADD')
         layout.operator("bm.append_list_to_favorites", icon='APPEND_BLEND')
-        if prefs.hide_header:
-            layout.operator("bm.add_to_favorites_popup", icon='PRESET_NEW')
-        layout.separator()
         if (context.space_data.type == 'VIEW_3D' and context.region.type == 'WINDOW'):
+            layout.separator()
             if prefs.hide_header:
                 layout.prop(props, "popup_tools_switch", text='Show Tools')
                 layout.prop(props, "show_brush_tools")
                 layout.operator("bm.settings_popup", icon='PREFERENCES')
                 layout.separator()
         else:
+            if MODE == 'SCULPT' and not prefs.sculpt_hide_preview:
+                layout.operator("bm.add_to_favorites_popup", icon='PRESET_NEW')
+            layout.separator()
             layout.operator("bm.settings_popup", icon='PREFERENCES')
             layout.separator()
-        # if context.mode == 'SCULPT':
-        #     layout.prop(props, "set_default_brushes_custom_icon")
-        #     layout.prop(props, "set_selected_brush_custom_icon")
-        #     row = layout.row()
-        #     row.enabled = props.set_selected_brush_custom_icon
-        #     row.prop(props, "set_force_brush_custom_icon")
         layout.operator("bm.set_icon_to_active_brush", icon='FILE_IMAGE')
         layout.separator()
         layout.operator("bm.save_favorites_to_current_file", icon='FILE_TICK')
         layout.operator("bm.load_favorites_from_current_file", icon='FILE_BLEND')
-        if prefs.use_sculpt_startup_favorites:
+        modes = BM_Modes()
+        if modes.use_startup_favorites():
             layout.operator("bm.load_startup_favorites", icon='FILE_BLEND')
         layout.operator("bm.save_active_brush", text='Save the Active Brush to a File', icon='FILE')
         layout.operator("bm.save_favorites", text='Save the Favorites to a File', icon='EXPORT')
         layout.operator("bm.append_from_a_file_to_favorites", text='Append from a File to the Favorites', icon='IMPORT')
         layout.separator()
-        if context.mode == 'SCULPT':
+        if context.mode == 'SCULPT' and not UI_MODE:
             layout.operator("bm.reset_default_brushes", icon='PRESET')
             layout.separator()
         layout.operator("bm.delete_active_brush", icon='TRASH')
         layout.operator("bm.delete_unused_brushes", icon='TRASH')
         layout.separator()
-        if (context.space_data.type == 'VIEW_3D' and context.region.type == 'WINDOW'):
+        if (context.space_data.type == 'VIEW_3D' and context.region.type == 'WINDOW') or UI_MODE:
             layout.prop(props, "edit_favorites")
             layout.operator("bm.remove_active_popup_favorite", icon='REMOVE')
         else:
-            layout.operator("bm.edit_favorites_list_popup", icon='LONGDISPLAY')
+            if MODE == 'SCULPT' and not prefs.sculpt_hide_preview:  # != PAINT_GPENCIL
+                layout.operator("bm.edit_favorites_list_popup", icon='LONGDISPLAY')
             layout.operator("bm.remove_active_brush_favorite", icon='REMOVE')
         layout.operator("bm.clear_favorites", icon='X')
 
 
-def edit_favorite_brushes_list(self, context):
-    return get_favorite_brushes(list_type='edit')
-
-
 def delete_fav_brush_list_update(self, context):
-    brush_name = context.window_manager.bm_edit_fav_list
+    brush_name = self.brush_name
     brushes = get_favorite_brushes()
     if len(brushes) == 0:
         return None
@@ -1497,13 +1786,13 @@ def delete_fav_brush_list_update(self, context):
     set_first_preview_item(context, brushes, wm_enum_prop='fav')
 
 
-class Manager_Scene_Properties(PropertyGroup):
+class BrushManager_Properties(PropertyGroup):
 
     lib_categories: EnumProperty(
         name='Category',
         items=lib_category_folders,
         description='The library category that contain the list of brushes existing in the blender file data',
-        update=update_category
+        # update=update_category
     )
     brush_manager_init: BoolProperty(
         name="Brush Manager Init",
@@ -1530,6 +1819,7 @@ class Manager_Scene_Properties(PropertyGroup):
         name='Search Filter',
         description='Text input field of the search filter',
         subtype='BYTE_STRING',
+        options={'TEXTEDIT_UPDATE'},
         update=update_brush_list
     )
     search_case_sensitive: BoolProperty(
@@ -1556,17 +1846,13 @@ class Manager_Scene_Properties(PropertyGroup):
         name="Auto Apply Theme to the Selected Brush",
         default=False,
         description="Apply theme to custom icon of the selected brush from library list",
+        update=update_sel_brush_custom_icon
     )
     set_force_brush_custom_icon: BoolProperty(
         name="Force to Apply Theme to the Selected Brush",
         default=False,
         description="Force to apply theme to the selected brush if custom icon is already exists",
         update=update_force_theme_to_brush
-    )
-    exclude_default_brushes: BoolProperty(
-        name="Exclude the Default Brushes",
-        default=False,
-        description="Exclude the default brushes from the list",
     )
     post_undo_last: BoolProperty(
         name="last post undo",
@@ -1575,16 +1861,6 @@ class Manager_Scene_Properties(PropertyGroup):
     update_after_save: BoolProperty(
         name="update after save",
         default=False
-    )
-    WindowManager.fav_brush_popup = EnumProperty(
-        items=get_favorite_brushes_popup,
-        update=set_brush_from_fav_popup
-    )
-    WindowManager.bm_edit_fav_list = EnumProperty(
-        name="Remove",
-        description="Remove brush from the Favorites list",
-        items=edit_favorite_brushes_list,
-        update=delete_fav_brush_list_update
     )
     edit_favorites: BoolProperty(
         name="Edit the Favorites List",
@@ -1608,7 +1884,12 @@ class BM_Side_Panel:
         layout = self.layout
         row = layout.row()
         row = row.row(align=True)
-        row.prop(props, "lib_categories", text='')
+        modes = BM_Modes()
+        preview_frame_scale = modes.preview_frame_scale()
+        if MODE == 'SCULPT':
+            row.prop(props, "lib_categories", text='')
+        else:
+            row.operator_menu_enum('bm.set_brushes_category', 'lib_category', text=props.lib_categories)
         if props.lib_categories != 'Default' and props.lib_categories != 'Current File':
             row.operator('bm.category_folder', text='', icon='FILE_FOLDER')
         row.operator('bm.update_category_list', text='', icon='FILE_REFRESH')
@@ -1616,18 +1897,29 @@ class BM_Side_Panel:
         if props.search_in_category:
             row = layout.row()
             row.prop(props, "search_bar", text='')
-            row.prop(props, "search_case_sensitive", text='', icon='FILE_TEXT')
-        row = layout.row()
-        row.template_icon_view(
-            context.window_manager, "brushes_in_files", show_labels=True,
-            scale=prefs.preview_frame_scale, scale_popup=prefs.preview_items_scale)
-        row.template_icon_view(
-            context.window_manager, "brushes_in_favorites", show_labels=True,
-            scale=prefs.preview_frame_scale, scale_popup=prefs.preview_items_scale)
-        col = row.column()
-        col.menu("VIEW3D_MT_Sculpt_brush_manager_menu", icon='DOWNARROW_HLT', text="")
-        if not prefs.move_add_to_favorite_op:
-            col.operator('bm.add_brush_to_favorites', text='', icon='ADD')
+            row.prop(props, "search_case_sensitive", text='', icon='SMALL_CAPS')
+        row = layout.row(align=True)
+        if MODE == 'SCULPT' and not prefs.sculpt_hide_preview:
+            row.template_icon_view(
+                context.window_manager, "brushes_in_files", show_labels=True,
+                scale=preview_frame_scale, scale_popup=prefs.preview_items_scale)
+            row.template_icon_view(
+                context.window_manager, "brushes_in_favorites", show_labels=True,
+                scale=preview_frame_scale, scale_popup=prefs.preview_items_scale)
+            row = row.row(align=True)
+            row.scale_y = preview_frame_scale
+            if not prefs.move_add_to_favorite_op:
+                row.operator('bm.add_brush_to_favorites', text='', icon='ADD')
+            row.menu("VIEW3D_MT_Sculpt_brush_manager_menu", icon='DOWNARROW_HLT', text="")
+        else:
+            preview_brushes_in_folders(self, context)
+            preview_brushes_in_favorites(self, context)
+            row.scale_y = preview_frame_scale
+            row.operator("bm.add_to_favorites_popup", text='Select/Add', icon='PRESET_NEW')
+            row.operator("bm.edit_favorites_list_popup", text='Favorites', icon='SOLO_ON')  # SOLO_ON LONGDISPLAY
+            if not prefs.move_add_to_favorite_op:
+                row.operator('bm.add_brush_to_favorites', text='', icon='ADD')
+            row.menu("VIEW3D_MT_Sculpt_brush_manager_menu", icon='DOWNARROW_HLT', text="")
 
 
 class SCULPT_PT_Brush_Manager(Panel):
@@ -1639,11 +1931,50 @@ class SCULPT_PT_Brush_Manager(Panel):
 
     @classmethod
     def poll(cls, context):
-        if context.mode == 'SCULPT':
+        if context.mode == 'SCULPT' or\
+                context.mode == 'PAINT_TEXTURE':
             return True
 
     def __init__(self):
+        global MODE
+        global UI_MODE
         BM_Initialization()
+        if bpy.context.mode != MODE:  # and not UI_MODE:
+            props = bpy.context.window_manager.brush_manager_props
+            props.lib_categories = 'Default'
+            UI_MODE = False
+            update_brush_list(self, bpy.context)
+            store_favorites_list(MODE, 'STORE')
+            MODE = bpy.context.mode
+            switching_modes()
+
+    def draw(self, context):
+        layout = self.layout
+        BM_Side_Panel.draw(self, context, layout)
+
+
+class GPENCIL_PT_Brush_Manager(Panel):
+    bl_label = "Brush Manager"
+    bl_idname = "VIEW3D_PT_brush_manager_gpencil"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_parent_id = "VIEW3D_PT_tools_grease_pencil_brush_select"
+
+    @classmethod
+    def poll(cls, context):
+        if context.mode == 'PAINT_GPENCIL':
+            return True
+
+    def __init__(self):
+        global MODE
+        BM_Initialization()
+        if bpy.context.mode != MODE and not UI_MODE:
+            props = bpy.context.window_manager.brush_manager_props
+            props.lib_categories = 'Default'
+            update_brush_list(self, bpy.context)
+            store_favorites_list(MODE, 'STORE')
+            MODE = bpy.context.mode
+            switching_modes()
 
     def draw(self, context):
         layout = self.layout
@@ -1652,6 +1983,7 @@ class SCULPT_PT_Brush_Manager(Panel):
 
 panels = (
     SCULPT_PT_Brush_Manager,
+    GPENCIL_PT_Brush_Manager
 )
 
 
@@ -1667,65 +1999,13 @@ def update_panel(self, context):
         bpy.utils.register_class(panel)
 
 
-def draw_preferences(self, context, layout):
-    # prefs = context.preferences.addons[Addon_Name].preferences
-    # layout = self.layout
-    col = layout.column(align=True)
-    col.label(text="Specify a path to a folder containing sub-folders with your sculpt brushes collections in *.blend files.")
-    col = layout.column(align=True)
-    col.label(text="Brush Library Path:")
-    col.prop(self, "brush_library")
+def draw_keymaps(self, context, layout):
     box = layout.box()
     row = box.row()
-    # row.label(text="UI Settings:")
-    row.prop(self, "hide_header")
-    row.prop(self, "move_add_to_favorite_op")
-    row = box.row()
-    row.label(text="Preview Frame Size:")
-    row.prop(self, "preview_frame_scale", text='')
-    row = box.row()
-    row.label(text="Preview Brush Size:")
-    row.prop(self, "preview_items_scale", text='')
-    row = box.row()
-    row.label(text="Popup Button List Size:")
-    row.prop(self, "popup_items_scale", text='')
-    row = box.row()
-    row.enabled = not self.wide_popup_layout
-    row.label(text="Popup Window Width:")
-    row.prop(self, "popup_width", text='')
-    row = box.row()
-    row.prop(self, "wide_popup_layout",)
-    row.prop(self, "wide_popup_layout_size", text='')
-    row = box.row()
-    row.label(text="Popup Max Tool Columns:")
-    row.prop(self, "popup_max_tool_columns", text='')
-    row = box.row()
-    row.label(text="Brush Icon Theme:")
-    row.prop(self, "brush_icon_theme", text='')
+    row.label(text="Keymaps:", icon="KEYINGSET")
+    row.prop(self, "persistent_keymaps")
 
-    row = box.row()
-    grid = row.grid_flow(columns=2, align=True)
-    grid.prop(self, "default_brushes_custom_icon")
-    grid.prop(self, "selected_brush_custom_icon")
-    row = grid.row()
-    row.enabled = self.selected_brush_custom_icon
-    row.prop(self, "force_brush_custom_icon")
-    grid.prop(self, "save_favorites_list")
-    grid.prop(self, "ui_panel_closed")
-    grid.prop(self, "popup_tools")
-    grid.prop(self, "brush_tools")
-    grid.prop(self, "switch_mode_on_save")
-
-    box = layout.box()
-    row = box.row()
-    row.prop(self, "use_sculpt_startup_favorites")
-    row = box.row()
-    row.enabled = self.use_sculpt_startup_favorites
-    row.prop(self, "path_to_sculpt_startup_favorites", text='')
-
-    box = layout.box()
     col = box.column()
-    col.label(text="Keymap:", icon="KEYINGSET")
 
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.user
@@ -1752,63 +2032,343 @@ def draw_preferences(self, context, layout):
         col.separator()
         old_km_name = km.name
 
+
+def draw_similar_settings(self, context, layout, mode=''):
+    modes = BM_Modes()
+    props = dict(
+        preview_frame_scale=dict(
+            label="Preview Frame Row Size:",
+            prop=modes.Modes[mode].get('preview_frame_scale')
+        ),
+        popup_items_scale=dict(
+            label="Popup Button List Size:",
+            prop=modes.Modes[mode].get('popup_items_scale')
+        ),
+        wide_popup_layout=dict(
+            prop=modes.Modes[mode].get('wide_popup_layout')
+        ),
+        wide_popup_layout_size=dict(
+            prop=modes.Modes[mode].get('wide_popup_layout_size')
+        ),
+        popup_width=dict(
+            label="Popup Window Width:",
+            prop=modes.Modes[mode].get('popup_width')
+        ),
+        popup_max_tool_columns=dict(
+            label="Popup Max Tool Columns:",
+            prop=modes.Modes[mode].get('popup_max_tool_columns')
+        ),
+    )
+    box = layout
+    row = box.row()
+    if self.show_UI:
+        row.prop(self, "show_UI", icon='TRIA_DOWN', toggle=True)
+        draw_assign_next = False
+        popup_width_enable = not eval('self.' + modes.Modes[mode].get('wide_popup_layout'))
+        for pr in props:
+            if not draw_assign_next:
+                row = box.row()
+                if pr == 'popup_width':
+                    row.enabled = popup_width_enable
+            if props[pr].get('label'):
+                row.label(text=props[pr].get('label'))
+            elif not draw_assign_next:
+                row.prop(self, props[pr].get('prop'))
+                draw_assign_next = True
+                continue
+            row = row.row(align=True)
+            row.scale_x = 0.96
+            row.prop(self, props[pr].get('prop'), text='')
+            op = row.operator("bm.assign_to_similar", text='', icon='CHECKMARK')
+            op.prop = pr
+            op.mode = mode
+            draw_assign_next = False
+            if pr == 'preview_frame_scale' and mode == 'SCULPT':
+                row = box.row()
+                row.label(text="Preview Brush Size:")
+                row.prop(self, "preview_items_scale", text='')
+            if pr == 'popup_max_tool_columns' and mode == 'SCULPT':
+                row = box.row()
+                row.label(text="Brush Icon Theme:")
+                row.prop(self, "brush_icon_theme", text='')
+    else:
+        row.prop(self, "show_UI", icon='TRIA_RIGHT', toggle=True)
+
+
+def draw_preferences(self, context, layout):
+    # prefs = context.preferences.addons[Addon_Name].preferences
+    # layout = self.layout
+    row = layout.row()
+    if self.show_common:
+        row.prop(self, "show_common", icon='TRIA_DOWN', toggle=True)
+
+        box = layout.box()
+        row = box.row()
+        grid = row.grid_flow(columns=2, align=True)
+        grid.prop(self, "hide_header")
+        grid.prop(self, "move_add_to_favorite_op")
+        grid.prop(self, "ui_panel_closed")
+        grid.prop(self, "save_favorites_list")
+        grid.prop(self, "close_popup_on_select")
+        grid.prop(self, "popup_tools")
+        grid.prop(self, "brush_tools")
+        grid.prop(self, "hide_annotate_tools")
+    else:
+        row.prop(self, "show_common", icon='TRIA_RIGHT', toggle=True)
+
+    row = layout.row()
+    if self.show_keymaps:
+        row.prop(self, "show_keymaps", icon='TRIA_DOWN', toggle=True)
+        draw_keymaps(self, context, layout)
+    else:
+        row.prop(self, "show_keymaps", icon='TRIA_RIGHT', toggle=True)
+
+    row = layout.row(align=True)
+    row.prop(self, "pref_tabs", expand=True)
     box = layout.box()
-    box.label(text="Default Sculpt Brushes List:")
-    row = box.row(align=True)
-    grid = row.grid_flow(columns=3, align=True)
-    # brushes = get_default_brushes_list()
-    brushes = BRUSHES_SCULPT
-    for i, brush in enumerate(brushes):
-        try:
-            exec("if self.default_brush_" + str(i) + " != '': pass")
-            grow = grid.row(align=True)
-            grow.prop(self, 'default_brush_' + str(i), toggle=True)
-            grow.prop(self, 'tool_brush_' + str(i), text='', icon='TOOL_SETTINGS', toggle=True)
-        except AttributeError:
-            continue
-    # wm = bpy.context.window_manager
-    row = box.row(align=True)
-    row.label(text="Custom Default Brush Slots:")
-    row.prop(self, "default_brushes_custom_slots", text="")
-    row.operator("bm.refresh_brushes_data_list", icon='FILE_REFRESH')
-    row = box.row(align=True)
-    grid = row.grid_flow(columns=3, align=True)
-    for i in range(self.default_brushes_custom_slots):
-        grid.prop_search(self, 'add_def_brush_' + str(i), wm, "bm_brushes_data_list", text="")
+    if self.pref_tabs == 'SCULPT':
+        col = box.column(align=True)
+        col.label(text="Specify a path to a folder containing sub-folders with your sculpt brushes collections in *.blend files.")
+        col = box.column(align=True)
+        col.label(text="Sculpt Brush Library Path:")
+        col.prop(self, "s_brush_library")
+
+        row = box.row()
+        row.prop(self, "use_s_startup_favorites")
+        row = box.row()
+        row.enabled = self.use_s_startup_favorites
+        row.prop(self, "path_to_s_startup_favorites", text='')
+
+        draw_similar_settings(self, context, box, mode='SCULPT')
+
+        row = box.row()
+        grid = row.grid_flow(columns=2, align=True)
+        grid.prop(self, "default_brushes_custom_icon")
+        grid.prop(self, "selected_brush_custom_icon")
+        row = grid.row()
+        row.enabled = self.selected_brush_custom_icon
+        row.prop(self, "force_brush_custom_icon")
+        grid.prop(self, "sculpt_hide_preview")
+        grid.prop(self, "switch_mode_on_save")
+
+        box = layout.box()
+        box.label(text="Default Sculpt Brushes List:")
+        row = box.row(align=True)
+        grid = row.grid_flow(columns=3, align=True)
+        # brushes = get_default_brushes_list()
+        brushes = BRUSHES_SCULPT
+        for i, brush in enumerate(brushes):
+            b = brush.replace(' ', '')
+            b = b.replace('-', '')
+            try:
+                exec("if self.default_s_brush_" + b + " != '': pass")
+                grow = grid.row(align=True)
+                grow.prop(self, 'default_s_brush_' + b, toggle=True)
+                grow.prop(self, 's_tool_brush_' + b, text='', icon='TOOL_SETTINGS', toggle=True)
+            except AttributeError:
+                continue
+        wm = bpy.context.window_manager
+        row = box.row(align=True)
+        row.label(text="Custom Default Brush Slots:")
+        row.prop(self, "default_brushes_custom_slots", text="")
+        row.operator("bm.refresh_brushes_data_list", icon='FILE_REFRESH')
+        row = box.row(align=True)
+        grid = row.grid_flow(columns=3, align=True)
+        for i in range(self.default_brushes_custom_slots):
+            grid.prop_search(self, 'add_def_brush_' + str(i), wm, "bm_brushes_data_list", text="")
+
+    elif self.pref_tabs == 'PAINT_TEXTURE':
+        col = box.column(align=True)
+        col.label(text="Specify a path to a folder containing sub-folders with your paint brushes collections in *.blend files.")
+        col = box.column(align=True)
+        col.label(text="Paint Brush Library Path:")
+        col.prop(self, "ip_brush_library")
+
+        row = box.row()
+        row.prop(self, "use_ip_startup_favorites")
+        row = box.row()
+        row.enabled = self.use_ip_startup_favorites
+        row.prop(self, "path_to_ip_startup_favorites", text='')
+
+        draw_similar_settings(self, context, box, mode='PAINT_TEXTURE')
+
+        box = layout.box()
+        box.label(text="Default Paint Brushes List:")
+        row = box.row(align=True)
+        grid = row.grid_flow(columns=3, align=True)
+        # brushes = get_default_brushes_list()
+        brushes = BRUSHES_IPAINT
+        for i, brush in enumerate(brushes):
+            b = brush.replace(' ', '')
+            b = b.replace('-', '')
+            try:
+                exec("if self.default_ip_brush_" + b + " != '': pass")
+                grow = grid.row(align=True)
+                grow.prop(self, 'default_ip_brush_' + b, toggle=True)
+                grow.prop(self, 'ip_tool_brush_' + b, text='', icon='TOOL_SETTINGS', toggle=True)
+            except AttributeError:
+                continue
+
+    elif self.pref_tabs == 'PAINT_GPENCIL':
+        col = box.column(align=True)
+        col.label(text="Specify a path to a folder containing sub-folders with your gpencil brushes collections in *.blend files.")
+        col = box.column(align=True)
+        col.label(text="GPencil Brush Library Path:")
+        col.prop(self, "gp_brush_library")
+
+        row = box.row()
+        row.prop(self, "use_gp_startup_favorites")
+        row = box.row()
+        row.enabled = self.use_gp_startup_favorites
+        row.prop(self, "path_to_gp_startup_favorites", text='')
+
+        draw_similar_settings(self, context, box, mode='PAINT_GPENCIL')
+
+        box = layout.box()
+        box.label(text="Default Paint Brushes List:")
+        row = box.row(align=True)
+        grid = row.grid_flow(columns=4, align=True)
+        # brushes = get_default_brushes_list()
+        brushes = BRUSHES_GPAINT_NAMES
+        for i, brush in enumerate(brushes):
+            b = brush.replace(' ', '')
+            b = b.replace('-', '')
+            try:
+                exec("if self.default_gp_brush_" + b + " != '': pass")
+                grid.prop(self, 'default_gp_brush_' + b, toggle=True)
+            except AttributeError:
+                continue
+        row = box.row(align=True)
+        row.label(text="GPencil Paint Tools:")
+        row = box.row(align=True)
+        grid = row.grid_flow(columns=4, align=True)
+        brushes = BRUSHES_GPAINT
+        for i, brush in enumerate(brushes):
+            b = brush.replace(' ', '')
+            b = b.replace('-', '')
+            grid.prop(self, 'gp_tool_brush_' + b, text=brush, icon='TOOL_SETTINGS', toggle=True)
+
+    row = layout.row(align=True)
+    row.operator("bm.save_pref_settings", icon='EXPORT')
+    row.operator("bm.load_pref_settings", icon='IMPORT')
+
+
+class PREF_OT_assign_to_similar_settings(Operator):
+    bl_label = 'Assign to Similar'
+    bl_idname = 'bm.assign_to_similar'
+    bl_description = "Assign the current value to similar settings in other modes"
+
+    prop: StringProperty()
+    mode: StringProperty()
+
+    def execute(self, context):
+        prefs = context.preferences.addons[Addon_Name].preferences
+        modes = BM_Modes()
+        mode_prop = modes.Modes[self.mode].get(self.prop)
+        value = eval('prefs.' + mode_prop)
+        for m in modes.in_modes:
+            mode_prop = modes.Modes[m].get(self.prop)
+            exec("prefs." + mode_prop + " = value")
+
+        return {'FINISHED'}
 
 
 class BrushManager_Preferences(AddonPreferences):
 
     bl_idname = Addon_Name
 
-    brush_library: StringProperty(
-        name="",
-        subtype='DIR_PATH',
-        # default="D:\\Blender\\Brush_Library",
-        description='The main library folder containing sub-folders with the *.blend files of sculpt brushes'
-    )
-    path_to_sculpt_startup_favorites: StringProperty(
-        name="Path to the Sculpt Startup Favorites List",
-        subtype='FILE_PATH',
-        description='The path to the .blend file that contains a list of brushes for the Sculpt Favorites'
-    )
-    use_sculpt_startup_favorites: BoolProperty(
-        name="Use Sculpt Startup Favorites",
-        default=False,
-        description="Automatically load the Favorites list from the specified file if that list is empty in the current file"
-    )
+    modes = BM_Modes()
+    wide_items = [
+        ('225', 'Tiny', ''),
+        ('250', 'Smaller', ''),
+        ('300', 'Small', ''),
+        ('350', 'Medium', ''),
+        ('425', 'Big', ''),
+        ('475', 'Bigger', ''),
+        ('525', 'Large', ''),
+        ('600', 'Largest', ''),
+    ]
+    for m in modes.in_modes:
+        prop = modes.Modes[m].get('brush_library')
+        description = 'The main library folder containing sub-folders with the *.blend files of this mode brushes'
+        exec(
+            prop + ": StringProperty("
+            "name='', subtype='DIR_PATH',"
+            "description=description)"
+        )
+        prop = modes.Modes[m].get('use_startup_favorites')
+        name = "Use Sculpt Startup Favorites"
+        description = "Automatically load the Favorites list from the specified file if that list is empty in the current file"
+        exec(
+            prop + ": BoolProperty("
+            "name=name, default=False,"
+            "description=description)"
+        )
+        prop = modes.Modes[m].get('path_to_startup_favorites')
+        name = "Path to the Mode Startup Favorites List"
+        description = 'The path to the .blend file that contains a list of brushes for the Mode Favorites'
+        exec(
+            prop + ": StringProperty("
+            "name=name, subtype='FILE_PATH',"
+            "description=description)"
+        )
+        prop = modes.Modes[m].get('preview_frame_scale')
+        name = "Preview Frame Row Size"
+        description = 'Scale the size of the preview frames row on the Brushes Manager UI panel'
+        exec(
+            prop + ": FloatProperty("
+            "name=name, min=1, max=6.5, default=2,"
+            "description=description)"
+        )
+        prop = modes.Modes[m].get('popup_items_scale')
+        name = "Popup Button List Size"
+        description = 'Scale the size of icon and button in the popup list'
+        exec(
+            prop + ": FloatProperty("
+            "name=name, min=1, max=5, default=1.8,"
+            "description=description)"
+        )
+        prop = modes.Modes[m].get('popup_width')
+        name = "Popup Window Width"
+        description = 'Scale the size of the popup window width'
+        exec(
+            prop + ": IntProperty("
+            "name=name, min=100, soft_min=100, max=600, soft_max=600, default=180,"
+            "description=description)"
+        )
+        prop = modes.Modes[m].get('popup_max_tool_columns')
+        name = "Popup Max Tool Columns"
+        description = 'Set a maximum number of the columns for tools in the popup window'
+        exec(
+            prop + ": IntProperty("
+            "name=name, min=1, soft_min=1, max=12, soft_max=12, default=4,"
+            "description=description)"
+        )
+        prop = modes.Modes[m].get('wide_popup_layout')
+        name = 'Wide Popup Layout'
+        description = 'Let Tools to show on the right side of the popup layout'
+        exec(
+            prop + ": BoolProperty("
+            "name=name, default=False,"
+            "description=description)"
+        )
+        prop = modes.Modes[m].get('wide_popup_layout_size')
+        name = 'Wide Popup Layout Size'
+        description = 'Scale the size of the popup layout'
+        exec(
+            prop + ": EnumProperty("
+            "name=name, items=wide_items, default='350',"
+            "description=description)"
+        )
+    del name
+    del prop
+    del description
+    #////////////////////////
     ui_panel_closed: BoolProperty(
         name="UI Panel Default Closed",
         default=False,
-        description="Register the UI panel closed by default. In order to use it properly startup file have to use factory settings for the Brushes panel",
+        description="Register the UI panel closed by default. In order to use it properly startup file have to use factory settings for that panel",
         update=update_panel
-    )
-    preview_frame_scale: FloatProperty(
-        name="Preview Frame Size",
-        min=1,
-        max=6.5,
-        default=2.1,
-        description='Scale the size of the preview frames on the Brushes Manager UI panel'
     )
     preview_items_scale: FloatProperty(
         name="Preview Items Size",
@@ -1816,23 +2376,6 @@ class BrushManager_Preferences(AddonPreferences):
         max=7,
         default=2.8,
         description='Scale the size of icon in the brushes preview list'
-    )
-    popup_items_scale: FloatProperty(
-        name="Popup Button List Size",
-        min=1,
-        max=5,
-        default=1.8,
-        description='Scale the size of icon and button in the popup list'
-    )
-    popup_width: IntProperty(
-        name="Popup Window Width",
-        description='Scale the size of the popup window width',
-        min=100, soft_min=100, max=500, soft_max=500, default=180
-    )
-    popup_max_tool_columns: IntProperty(
-        name="Popup Max Tool Columns",
-        description='Set a maximum number of the columns for tools in the popup window',
-        min=1, soft_min=2, max=8, soft_max=8, default=4
     )
     hide_header: BoolProperty(
         name="Hide Header in the Popup Window",
@@ -1842,7 +2385,7 @@ class BrushManager_Preferences(AddonPreferences):
     move_add_to_favorite_op: BoolProperty(
         name="Move \'Add to the Favorites\' into Menu",
         default=False,
-        description="Move the \'Add to the Favorites\' operator from UI panel into own menu. Useful for the preview frame scaling lower than default"
+        description="Move the \'Add to the Favorites\' operator from UI panel into own menu."
     )
     brush_icon_theme: EnumProperty(
         name='Icon Theme',
@@ -1876,6 +2419,11 @@ class BrushManager_Preferences(AddonPreferences):
         default=False,
         description="On Save include the favorites brushes in the current file data and memorize the current favorites list"
     )
+    sculpt_hide_preview: BoolProperty(
+        name="Hide Preview Frame",
+        default=False,
+        description="Hide brush preview frame, make UI layout the same look, as its like in other modes"
+    )
     switch_mode_on_save: BoolProperty(
         name="Switch Mode on Save",
         default=False,
@@ -1894,32 +2442,74 @@ class BrushManager_Preferences(AddonPreferences):
         default=False,
         update=update_brush_tools_popup
     )
-    wide_popup_layout: BoolProperty(
-        name='Wide Popup Layout',
-        description='Let Tools to show on the right side of the popup layout',
+    hide_annotate_tools: BoolProperty(
+        name='Hide Annotate Tools in Popup',
+        description='Hide Annotate tools in the tools list of the popup window',
+        default=True
+    )
+    pref_tabs: EnumProperty(
+        name='Add-on Settings Tabs',
+        items=[
+            ('SCULPT', 'Sculpt', ''),
+            ('PAINT_TEXTURE', 'Image Paint', ''),
+            ('PAINT_GPENCIL', 'GPencil', ''),
+        ],
+        description='Select a settings tab',
+        default='SCULPT',
+    )
+    show_common: BoolProperty(
+        name='Common',
+        description='Show Common settings',
         default=False,
     )
-    wide_popup_layout_size: EnumProperty(
-        name='Wide Popup Layout Size',
-        items=[
-            ('225', 'Tiny', ''),
-            ('250', 'Smaller', ''),
-            ('300', 'Small', ''),
-            ('350', 'Medium', ''),
-            ('425', 'Big', ''),
-            ('475', 'Bigger', ''),
-            ('525', 'Large', ''),
-            ('600', 'Largest', ''),
-        ],
-        description='Scale the size of the popup layout',
-        default='350',
+    show_UI: BoolProperty(
+        name='UI',
+        description='Show UI settings',
+        default=False,
+    )
+    show_keymaps: BoolProperty(
+        name='Keymaps',
+        description='Show keymap settings',
+        default=False,
+    )
+    persistent_keymaps: BoolProperty(
+        name='Persistent Keymaps',
+        description='Keep the same keymap settings for the app templates',
+        default=True,
+    )
+    close_popup_on_select: BoolProperty(
+        name='Close Popup on Tool Select',
+        description='Close popup windows when brush or tool have been selected',
+        default=True,
     )
     # brushes = get_default_brushes_list()
     brushes = BRUSHES_SCULPT
     for i, brush in enumerate(brushes):
-        default_brush = 'default_brush_' + str(i)
+        b = brush.replace(' ', '')
+        b = b.replace('-', '')
+        default_brush = 'default_s_brush_' + b  # str(i)
         exec(default_brush + ': BoolProperty(name="' + brush + '", default = True, update=update_pref_def_brush)')
-        tool_brush = 'tool_brush_' + str(i)
+        tool_brush = 's_tool_brush_' + b
+        exec(tool_brush + ': BoolProperty(name="' + brush + '", default = True)')
+    brushes = BRUSHES_IPAINT
+    for i, brush in enumerate(brushes):
+        b = brush.replace(' ', '')
+        b = b.replace('-', '')
+        default_brush = 'default_ip_brush_' + b
+        exec(default_brush + ': BoolProperty(name="' + brush + '", default = True, update=update_brush_list)')
+        tool_brush = 'ip_tool_brush_' + b
+        exec(tool_brush + ': BoolProperty(name="' + brush + '", default = True)')
+    brushes = BRUSHES_GPAINT_NAMES
+    for i, brush in enumerate(brushes):
+        b = brush.replace(' ', '')
+        b = b.replace('-', '')
+        default_brush = 'default_gp_brush_' + b
+        exec(default_brush + ': BoolProperty(name="' + brush + '", default = True, update=update_brush_list)')
+    brushes = BRUSHES_GPAINT
+    for i, brush in enumerate(brushes):
+        b = brush.replace(' ', '')
+        b = b.replace('-', '')
+        tool_brush = 'gp_tool_brush_' + b
         exec(tool_brush + ': BoolProperty(name="' + brush + '", default = True)')
 
     default_brushes_custom_slots: IntProperty(
@@ -1937,6 +2527,7 @@ class BrushManager_Preferences(AddonPreferences):
         exec("add_def_brush_" + str(i) + ": StringProperty(name='" + name + "', description='" + description + "')")
 
     def draw(self, context):
+        # prefs = context.preferences.addons[Addon_Name].preferences
         layout = self.layout
         draw_preferences(self, context, layout)
 
@@ -1958,8 +2549,9 @@ def set_brushes_data_collection_items():
         brushes_data_list = bpy.context.window_manager.bm_brushes_data_list
     except AttributeError:
         return None
-    brushes_current_file = get_current_file_brushes()
-    brushes_default = get_default_brushes_list()
+    modes = BM_Modes('SCULPT')
+    brushes_current_file = get_current_file_brushes('SCULPT')
+    brushes_default = modes.def_brushes_list()
     brushes_sort = [b for b in brushes_current_file if b not in brushes_default]
     brushes_data_list.clear()
     for name in brushes_sort:
@@ -2008,13 +2600,18 @@ def brush_manager_post_undo(scene):
 
 @persistent
 def brush_manager_on_file_load(dummy):
-    global SCULPT_SETTINGS_LOADED
-    global SCULPT_START_FAV_LOADED
+    global FAV_SETTINGS_LOADED
+    global START_FAV_LOADED
+    # global SET_DEFAULT_ICONS
+    # global SET_SELECTED_ICON
     global MODE
-
-    SCULPT_SETTINGS_LOADED = False
-    SCULPT_START_FAV_LOADED = False
-    MODE = 'NONE'
+    global UI_MODE
+    FAV_SETTINGS_LOADED.clear()
+    START_FAV_LOADED.clear()
+    # SET_DEFAULT_ICONS = False
+    # SET_SELECTED_ICON = False
+    MODE = None
+    UI_MODE = False
     try:
         check = bpy.context.window_manager.bm_brushes_data_list
     except AttributeError:
@@ -2027,10 +2624,10 @@ def brush_manager_on_file_load(dummy):
 def brush_manager_pre_save(dummy):
     prefs = bpy.context.preferences.addons[Addon_Name].preferences
     props = bpy.context.window_manager.brush_manager_props
-    if props.set_default_brushes_custom_icon:
+    if props.set_default_brushes_custom_icon or SET_DEFAULT_ICONS:
         set_toggle_default_icons(bpy.context, switch=True)
     if prefs.save_favorites_list:
-        store_favorites_list('SCULPT_SETTINGS')
+        store_favorites_list(MODE, 'SETTINGS')
     if bpy.context.mode == 'SCULPT' and prefs.switch_mode_on_save:
         bpy.ops.sculpt.sculptmode_toggle()
 
@@ -2044,7 +2641,7 @@ def brush_manager_pre_dp_update(dummy):
     if not props.update_after_save:
         return None
     props.update_after_save = False
-    if props.set_default_brushes_custom_icon:
+    if props.set_default_brushes_custom_icon or SET_DEFAULT_ICONS:
         set_toggle_default_icons(bpy.context)
 
 
@@ -2063,33 +2660,193 @@ def BM_Initialization():
 
 
 def load_favorites_in_mode():
-    global MODE
     loaded = False
-    if not SCULPT_SETTINGS_LOADED and MODE == 'SCULPT':
-        loaded = load_saved_favorites_list('SCULPT_SETTINGS')
-    if not SCULPT_START_FAV_LOADED and MODE == 'SCULPT':
+    if not FAV_SETTINGS_LOADED.get(MODE):
+        loaded = load_saved_favorites_list(MODE, 'SETTINGS')
+    if not START_FAV_LOADED.get(MODE):
         create_default_sculpt_tools()
         if not loaded:
             loaded = load_startup_favorites(MODE)
     if not loaded:
-        load_saved_favorites_list(MODE)
+        load_saved_favorites_list(MODE, 'STORE')
 
 
-class WM_MT_Favorite_Popup_Menu(Operator):
+def set_ui_mode(context, from_ui='refresh'):
+    global UI_MODE
+    try:
+        if context.space_data.ui_mode == 'PAINT':
+            UI_MODE = True
+    except AttributeError:
+        UI_MODE = False
+        return False
+
+
+def switch_icons():
+    global SET_DEFAULT_ICONS
+    global SET_SELECTED_ICON
+    props = bpy.context.window_manager.brush_manager_props
+    if MODE != 'SCULPT':
+        if props.set_default_brushes_custom_icon:
+            props.set_default_brushes_custom_icon = False
+            SET_DEFAULT_ICONS = True
+        if props.set_selected_brush_custom_icon:
+            props.set_selected_brush_custom_icon = False
+            SET_SELECTED_ICON = True
+        if prefs().default_brushes_custom_icon:
+            SET_DEFAULT_ICONS = True
+        else:
+            SET_DEFAULT_ICONS = False
+    if MODE == 'SCULPT' and not UI_MODE:
+        if SET_DEFAULT_ICONS:
+            props.set_default_brushes_custom_icon = True
+        if SET_SELECTED_ICON:
+            props.set_selected_brush_custom_icon = True
+
+
+def switching_modes():
+    load_favorites_in_mode()
+    switch_icons()
+
+
+def draw_favorite_brushes(layout, context):
+    space_type = context.space_data.type
+    toolhelper = space_toolsystem_common.ToolSelectPanelHelper
+    tool_active_id = getattr(
+        toolhelper._tool_active_from_context(context, space_type),
+        "idname", None,)
+    fav_brushes = get_favorite_brushes()
+    for brush in fav_brushes:
+        row = layout.row(align=True)
+        row.alignment = 'EXPAND'
+        is_active = is_active_brush(context, brush)
+        if MODE == 'SCULPT':
+            op = row.operator("bm.set_brush", text=brush, emboss=True, depress=is_active)
+            op.brush = brush
+            op.from_list = "fav_brush_popup"
+        else:
+            if MODE == 'PAINT_GPENCIL':
+                if not tool_active_id.startswith("builtin_brush"):
+                    op = row.operator(
+                        "bm.select_brush", text='',
+                        icon='GREASEPENCIL', depress=is_active)
+                    op.brush = brush
+                    op.from_list = "fav_brush_popup"
+                    op.no_tool = True
+            op = row.operator("bm.select_brush", text=brush, depress=is_active)
+            op.brush = brush
+            op.from_list = "fav_brush_popup"
+            op.no_tool = False
+
+
+def draw_remove_fav_brushes(layout, context):
+    fav_brushes = get_favorite_brushes()
+    for brush in fav_brushes:
+        op = layout.operator("bm.remove_from_favorites", icon='REMOVE', text='', emboss=True)
+        op.brush_name = brush
+
+
+def popup_close():
+    bpy.context.window.screen = bpy.context.window.screen
+
+
+def tool_updated():
+    if Popup_Close:
+        popup_close()
+    return 0.2
+
+
+Popup_Close = False
+
+
+def get_tools_for_popup(context):
+    prefs = context.preferences.addons[Addon_Name].preferences
+    props = context.window_manager.brush_manager_props
+    brush_tool_items = []
+    other_tool_items = []
+    tools = space_toolsystem_toolbar.VIEW3D_PT_tools_active.tools_from_context(context)
+    brush_tools = get_pref_default_brush_props(list_type='tools')
+    for item in tools:
+        if item is None:
+            continue
+        if type(item) is tuple:
+            for i, sub_item in enumerate(item):
+                if not props.popup_tools_switch:
+                    continue
+                if sub_item.idname.startswith("builtin.annotate") and\
+                        prefs.hide_annotate_tools:
+                    continue
+                other_tool_items.append(sub_item)
+            continue
+        if item.idname.startswith("builtin_brush"):
+            if not props.show_brush_tools:
+                continue
+            if not brush_tools.get(item.label):
+                continue
+            brush_tool_items.append(item)
+            continue
+        if not props.popup_tools_switch:
+            continue
+        other_tool_items.append(item)
+    return brush_tool_items, other_tool_items
+
+
+def draw_popup_tools(layout, items, tool_active_id):
+    toolhelper = space_toolsystem_common.ToolSelectPanelHelper
+    for item in items:
+        icon_value = toolhelper._icon_value_from_icon_handle(item.icon)
+        is_active = (item.idname == tool_active_id)
+        layout.operator(
+            "wm.tool_set_by_id",
+            # text=item.label,
+            text="",
+            depress=is_active,
+            icon_value=icon_value,
+        ).name = item.idname
+
+
+class POPUP_OT_Tools_and_Brushes(Operator):
     bl_label = 'Brush Manager Popup Menu'
-    bl_idname = 'view3d.favorite_brushes_popup'
+    bl_idname = 'bm.tools_and_brushes_popup'
+
+    timer = True
+
+    def __del__(self):
+        global UI_MODE
+        UI_MODE = False
+        global Popup_Close
+        Popup_Close = False
+        if prefs().close_popup_on_select and not self.timer:
+            bpy.app.timers.unregister(tool_updated)
+
+    def __init__(self):
+        self.active_tool = None
+        if prefs().close_popup_on_select:
+            self.timer = bpy.app.timers.register(tool_updated)
 
     def execute(self, context):
         space = context.space_data.type
-        if space == 'VIEW_3D' and context.mode == 'SCULPT':
+        if space == 'VIEW_3D' and\
+                (context.mode == 'SCULPT' or context.mode == 'PAINT_TEXTURE' or context.mode == 'PAINT_GPENCIL') or\
+                (context.mode == 'PAINT_TEXTURE' and context.space_data.ui_mode == 'PAINT'):
+            prefs = context.preferences.addons[Addon_Name].preferences
+            props = context.window_manager.brush_manager_props
+            set_ui_mode(context, 'popup')
             BM_Initialization()
             global MODE
-            MODE = context.mode
-            prefs = context.preferences.addons[Addon_Name].preferences
-            if prefs.wide_popup_layout:
-                layout_width = int(prefs.wide_popup_layout_size)
+            if context.mode != MODE or UI_MODE:
+                props.lib_categories = 'Default'
+                update_brush_list(self, context)
+                store_favorites_list(MODE, 'STORE')
+                if UI_MODE:
+                    MODE = 'PAINT_TEXTURE'
+                else:
+                    MODE = context.mode
+                switching_modes()
+            modes = BM_Modes()
+            if modes.wide_popup_layout():
+                layout_width = int(modes.wide_popup_layout_size())
             else:
-                layout_width = prefs.popup_width
+                layout_width = modes.popup_width()
             return context.window_manager.invoke_popup(self, width=layout_width)
         else:
             return {'CANCELLED'}
@@ -2103,9 +2860,9 @@ class WM_MT_Favorite_Popup_Menu(Operator):
         row.prop(props, "popup_tools_switch", text='', icon='TOOL_SETTINGS')
         row.prop(props, "show_brush_tools", text='', icon='BRUSHES_ALL')
         row.operator("bm.settings_popup", text='', icon='PREFERENCES')
-        row = row.row()
+        row = row.row()  # align=True
         row.label(text=' ')
-        row.menu("VIEW3D_MT_Sculpt_brush_manager_menu", icon='DOWNARROW_HLT', text="")  # icon='DOWNARROW_HLT'
+        row.menu("VIEW3D_MT_Sculpt_brush_manager_menu", icon='DOWNARROW_HLT', text="")
 
     def draw(self, context):
         prefs = context.preferences.addons[Addon_Name].preferences
@@ -2113,10 +2870,15 @@ class WM_MT_Favorite_Popup_Menu(Operator):
         wm = bpy.context.window_manager
 
         layout = self.layout
-        if not props.popup_tools_switch and not props.show_brush_tools and\
-                prefs.wide_popup_layout:
-            layout_width = int(prefs.wide_popup_layout_size)
-            n = prefs.popup_max_tool_columns
+        tools = get_tools_for_popup(context)
+        modes = BM_Modes()
+        popup_items_scale = modes.popup_items_scale()
+        preview_frame_scale = modes.preview_frame_scale()
+        if ((not props.popup_tools_switch and not props.show_brush_tools) or (
+                not tools[0] and not tools[1])) and\
+                modes.wide_popup_layout():
+            layout_width = int(modes.wide_popup_layout_size())
+            n = modes.popup_max_tool_columns()
             units = (layout_width / (n * 5.35 + 18.6))
             if (units - round(units, 1)) > 0:
                 units = round(units, 1) + 0.05
@@ -2129,11 +2891,14 @@ class WM_MT_Favorite_Popup_Menu(Operator):
         mainrow = layout.row()
 
         col_one = mainrow.column()
-        if prefs.wide_popup_layout:
+        if modes.wide_popup_layout():
             col_one.ui_units_x = 5
             col_two = mainrow.column()
         row = col_one.row(align=True)
-        row.prop(props, "lib_categories", text='')
+        if MODE == 'SCULPT':
+            row.prop(props, "lib_categories", text='')
+        else:
+            row.operator_menu_enum('bm.set_brushes_category', 'lib_category', text=props.lib_categories)
         if props.lib_categories != 'Default' and props.lib_categories != 'Current File':
             row.operator('bm.category_folder', text='', icon='FILE_FOLDER')
         row.operator('bm.update_category_list', text='', icon='FILE_REFRESH')
@@ -2141,104 +2906,80 @@ class WM_MT_Favorite_Popup_Menu(Operator):
         if props.search_in_category:
             row = col_one.row(align=True)
             row.prop(props, "search_bar", text='')
-            row.prop(props, "search_case_sensitive", text='', icon='FILE_TEXT')
+            row.prop(props, "search_case_sensitive", text='', icon='SMALL_CAPS')
         row = col_one.row(align=True)
-        row.template_icon_view(
-            wm, "brushes_in_files", show_labels=True,
-            scale=prefs.preview_frame_scale, scale_popup=prefs.preview_items_scale)
-        col = row.column()
-        if prefs.move_add_to_favorite_op:
-            col.scale_y = prefs.preview_frame_scale
-        if not prefs.hide_header:
-            col.operator("bm.add_to_favorites_popup", text='', icon='PRESET_NEW')
+        if MODE == 'SCULPT' and not prefs.sculpt_hide_preview:
+            if not prefs.sculpt_hide_preview:
+                row = row.row(align=True)
+                row.scale_x = 0.91
+                row.template_icon_view(
+                    wm, "brushes_in_files", show_labels=True,
+                    scale=preview_frame_scale, scale_popup=prefs.preview_items_scale)
         else:
-            col.menu("VIEW3D_MT_Sculpt_brush_manager_menu", icon='DOWNARROW_HLT', text="")
+            preview_brushes_in_folders(self, context)
+        row = row.row(align=True)
+        row.scale_y = preview_frame_scale
+        row.operator("bm.add_to_favorites_popup", text='Select/Add', icon='PRESET_NEW')
         if not prefs.move_add_to_favorite_op:
-            col.operator('bm.add_brush_to_favorites', text='', icon='ADD')
+            row.operator('bm.add_brush_to_favorites', text='', icon='ADD')
+        if prefs.hide_header:
+            row.menu("VIEW3D_MT_Sculpt_brush_manager_menu", icon='DOWNARROW_HLT', text="")
 
         row = col_one.row(align=True)
         col = row.column(align=True)
-        preview_brushes_in_favorites(self, context)
+        enums = preview_brushes_in_favorites(self, context)
         icons = get_favorite_brushes(list_type='icons')
         for i, icon in enumerate(icons):
-            col.template_icon(icon_value=icon, scale=prefs.popup_items_scale)
+            col.template_icon(icon_value=icon, scale=popup_items_scale)
         col = row.column(align=True)
-        col.scale_y = prefs.popup_items_scale
-        col.prop(wm, "fav_brush_popup", expand=True)
+        col.scale_y = popup_items_scale
+
+        draw_favorite_brushes(col, context)
 
         if props.edit_favorites:
             col = row.column(align=True)
-            col.scale_y = prefs.popup_items_scale
-            col.prop(wm, "bm_edit_fav_list", expand=True)
+            col.scale_y = popup_items_scale
+
+            draw_remove_fav_brushes(col, context)
         #//////////////Tools//////////////
         if not props.popup_tools_switch and not props.show_brush_tools:
             return None
-        if prefs.wide_popup_layout:
+        if not tools[0] and not tools[1]:
+            return None
+
+        if modes.wide_popup_layout():
             col = col_two.column(align=False)
         else:
             col = col_one.column(align=False)
-        col.scale_y = prefs.popup_items_scale
-        if props.show_brush_tools:
-            bgrid = col.grid_flow(
-                row_major=True, columns=prefs.popup_max_tool_columns,
-                even_columns=True, even_rows=True, align=True)
-        flow = col.grid_flow(
-            row_major=True, columns=prefs.popup_max_tool_columns,
-            even_columns=True, even_rows=True, align=True)
-        tools = space_toolsystem_toolbar.VIEW3D_PT_tools_active.tools_from_context(context)
+        col.scale_y = popup_items_scale
+
         toolhelper = space_toolsystem_common.ToolSelectPanelHelper
         space_type = context.space_data.type
         tool_active_id = getattr(
             toolhelper._tool_active_from_context(context, space_type),
             "idname", None,
         )
-        brush_tools = get_pref_default_brush_props(list_type='tools')
-        for item in tools:
-            if item is None:
-                continue
-            if type(item) is tuple:
-                for i, sub_item in enumerate(item):
-                    if not props.popup_tools_switch:
-                        continue
-                    if sub_item.idname.startswith("builtin.annotate"):
-                        continue
-                    icon_value = toolhelper._icon_value_from_icon_handle(sub_item.icon)
-                    is_active = (sub_item.idname == tool_active_id)
-                    flow.operator(
-                        "wm.tool_set_by_id",
-                        # text=sub_item.label,
-                        text="",
-                        depress=is_active,
-                        icon_value=icon_value,
-                    ).name = sub_item.idname
-                continue
-            icon_value = toolhelper._icon_value_from_icon_handle(item.icon)
-            is_active = (item.idname == tool_active_id)
-            if item.idname.startswith("builtin_brush"):
-                if not props.show_brush_tools:
-                    continue
-                if not brush_tools.get(item.label):
-                    continue
-                bgrid.operator(
-                    "wm.tool_set_by_id",
-                    # text=item.label,
-                    text="",
-                    depress=is_active,
-                    icon_value=icon_value,
-                ).name = item.idname
-                continue
-            if not props.popup_tools_switch:
-                continue
-            flow.operator(
-                "wm.tool_set_by_id",
-                # text=item.label,
-                text="",
-                depress=is_active,
-                icon_value=icon_value,
-            ).name = item.idname
+        #///////////////////
+        if self.active_tool and prefs.close_popup_on_select:
+            if self.active_tool != tool_active_id:
+                global Popup_Close
+                Popup_Close = True
+        else:
+            self.active_tool = tool_active_id
+        #//////////////////
+        if props.show_brush_tools:
+            bgrid = col.grid_flow(
+                row_major=True, columns=modes.popup_max_tool_columns(),
+                even_columns=True, even_rows=True, align=True)
+            draw_popup_tools(bgrid, tools[0], tool_active_id)
+        if props.popup_tools_switch:
+            tgrid = col.grid_flow(
+                row_major=True, columns=modes.popup_max_tool_columns(),
+                even_columns=True, even_rows=True, align=True)
+            draw_popup_tools(tgrid, tools[1], tool_active_id)
 
 
-class WM_MT_Edit_Favorites_Popup(Operator):
+class POPUP_OT_Edit_Favorites_Popup(Operator):
     bl_label = 'Edit the Favorites List'
     bl_idname = 'bm.edit_favorites_list_popup'
 
@@ -2249,6 +2990,8 @@ class WM_MT_Edit_Favorites_Popup(Operator):
         prefs = context.preferences.addons[Addon_Name].preferences
         props = context.window_manager.brush_manager_props
         wm = bpy.context.window_manager
+        modes = BM_Modes()
+        popup_items_scale = modes.popup_items_scale()
         icons = get_favorite_brushes(list_type='icons')
 
         layout = self.layout
@@ -2256,14 +2999,50 @@ class WM_MT_Edit_Favorites_Popup(Operator):
         row = layout.row(align=True)
         col = row.column(align=True)
         for i, icon in enumerate(icons):
-            col.template_icon(icon_value=icon, scale=prefs.popup_items_scale)
+            col.template_icon(icon_value=icon, scale=popup_items_scale)
         col = row.column(align=True)
-        col.scale_y = prefs.popup_items_scale
-        col.prop(wm, "fav_brush_popup", expand=True)
+        col.scale_y = popup_items_scale
+
+        draw_favorite_brushes(col, context)
 
         col = row.column(align=True)
-        col.scale_y = prefs.popup_items_scale
-        col.prop(wm, "bm_edit_fav_list", expand=True)
+        col.scale_y = popup_items_scale
+
+        draw_remove_fav_brushes(col, context)
+
+
+class WM_OT_Add_from_Category(Operator):
+    bl_label = 'Add'
+    bl_idname = 'bm.add_from_category'
+    bl_description = "Add brush to the Favorites"
+
+    brush_name: StringProperty()
+
+    def execute(self, context):
+        add_to_fav_update(self, context)
+        return {'FINISHED'}
+
+
+class WM_OT_Add_from_Category_all_the_rest(Operator):
+    bl_label = 'Add All the Rest'
+    bl_idname = 'bm.add_from_category_all_the_rest'
+    bl_description = "Add all the rest of brushes to the Favorites"
+
+    def execute(self, context):
+        add_to_fav_update(self, context, all_the_rest=True)
+        return {'FINISHED'}
+
+
+class WM_OT_Remove_from_Favorites(Operator):
+    bl_label = 'Remove'
+    bl_idname = 'bm.remove_from_favorites'
+    bl_description = "Remove brush from the Favorites"
+
+    brush_name: StringProperty()
+
+    def execute(self, context):
+        delete_fav_brush_list_update(self, context)
+        return {'FINISHED'}
 
 
 BRUSHES_IN_CATEGORY = []
@@ -2281,80 +3060,86 @@ def set_brushes_in_category_list_popup(brushes_enum):
 
 
 def get_popup_add_list(list_type=''):
-
+    props = bpy.context.window_manager.brush_manager_props
     add = []
     icons = []
-    enum_iconless = []
+    filter_name = str(props.search_bar.decode("utf-8"))
     for name1, name2, blank, iconid, index in BRUSHES_IN_CATEGORY:
-        enum_iconless.append((name1, name2, '', index))
+        if filter_name and not props.search_case_sensitive:
+            if not text_lookup(filter_name.lower(), name1.lower()):
+                continue
+        elif filter_name:
+            if not text_lookup(filter_name, name1):
+                continue
         icons.append(iconid)
-        add.append((name1, '', '', 'ADD', index))
-    if list_type == 'enum':
-        return enum_iconless
+        add.append(name1)
     if list_type == 'icons':
         return icons
     return add
 
 
-def brushes_in_category(self, context):
-    return get_popup_add_list(list_type='enum')
-
-
-def popup_add_list(self, context):
-    return get_popup_add_list()
-
-
-def add_to_fav_update(self, context):
+def add_to_fav_update(self, context, all_the_rest=False):
     global BRUSHES_IN_CATEGORY
     b_preview_coll = preview_brushes_coll["favorites"]
     if b_preview_coll.my_previews_dir != "favorites":
         return None
     brushes_list = get_favorite_brushes()
-    brushes_list.append(self.add_list)
+    if not all_the_rest:
+        append_brushes = [self.brush_name]
+    else:
+        append_brushes = get_popup_add_list()
+    BRUSHES_IN_CATEGORY = [
+        (n1, n2, b, iid, i)
+        for n1, n2, b, iid, i in BRUSHES_IN_CATEGORY
+        if n1 not in append_brushes
+    ]
+    brushes_list += append_brushes
     brushes_list.sort()
     enum_items = create_enum_list(context, brushes_list, b_preview_coll)
     b_preview_coll.my_previews = enum_items
-    for i, (name1, name2, blank, iconid, index) in enumerate(BRUSHES_IN_CATEGORY):
-        if self.add_list == name1:
-            BRUSHES_IN_CATEGORY.pop(i)
-            self['add_list'] = BRUSHES_IN_CATEGORY[0][-1]
 
 
-class WM_MT_Add_to_Favorites_Popup(Operator):
+def is_active_brush(context, brush_name):
+    is_active = False
+    ts = context.tool_settings
+    brush = get_active_brush(context)
+    if hasattr(brush, 'name'):
+        is_active = (brush_name == brush.name)
+    return is_active
+
+
+class POPUP_OT_Add_to_Favorites_Popup(Operator):
     bl_label = 'Add to the Favorites from the Category List'
     bl_idname = 'bm.add_to_favorites_popup'
     bl_description = "Pick brushes from the popup Category list to append them to the Favorites list"
 
-    brushes: EnumProperty(
-        name='Brushes',
-        items=brushes_in_category,
-        update=set_brush_from_add_fav_popup
-    )
-    add_list: EnumProperty(
-        name='Add',
-        items=popup_add_list,
-        update=add_to_fav_update
-    )
-
     def execute(self, context):
-        brushes_enum = get_main_list_brushes(context, list_type='full')
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        update_brush_list(self, context)
+        brushes_enum = preview_brushes_in_folders(self, context)
         set_brushes_in_category_list_popup(brushes_enum)
-        return context.window_manager.invoke_popup(self, width=300)
+        return context.window_manager.invoke_popup(self, width=350)
 
     def draw(self, context):
         prefs = context.preferences.addons[Addon_Name].preferences
         props = context.window_manager.brush_manager_props
         wm = bpy.context.window_manager
+        modes = BM_Modes()
+        popup_items_scale = modes.popup_items_scale()
         icons = get_popup_add_list(list_type='icons')
 
         layout = self.layout
 
         row = layout.row(align=True)
         col1 = row.column()
-        row1 = col1.row()
-        row1.label(text='')
-        row1.label(text='')
-        row1.label(text='', icon='PRESET_NEW')
+        row1 = col1.row(align=True)
+        sr = row1.row(align=True)
+        sr.scale_x = 1.4
+        sr.prop(props, "search_bar", text='', icon='VIEWZOOM')
+        row1.prop(props, "search_case_sensitive", text='', icon='SMALL_CAPS')
+        row1.operator("bm.add_from_category_all_the_rest", text='', icon='PRESET_NEW')
         col2 = row.column()
         row2 = col2.row()
         row2.label(text='')
@@ -2363,30 +3148,60 @@ class WM_MT_Add_to_Favorites_Popup(Operator):
         row = col1.row(align=True)
         col = row.column(align=True)
         for i, icon in enumerate(icons):
-            col.template_icon(icon_value=icon, scale=prefs.popup_items_scale)
+            col.template_icon(icon_value=icon, scale=popup_items_scale)
         col = row.column(align=True)
-        col.scale_y = prefs.popup_items_scale
-        col.prop(self, "brushes", expand=True)
+        col.scale_y = popup_items_scale
+
+        space_type = context.space_data.type
+        toolhelper = space_toolsystem_common.ToolSelectPanelHelper
+        tool_active_id = getattr(
+            toolhelper._tool_active_from_context(context, space_type),
+            "idname", None,)
+        brushes = get_popup_add_list()
+        for brush in brushes:
+            clrow = col.row(align=True)
+            is_active = is_active_brush(context, brush)
+            if MODE == 'SCULPT':
+                op = clrow.operator("bm.set_brush", text=brush, emboss=True, depress=is_active)
+                op.brush = brush
+                op.from_list = "add_brush_popup"
+            else:
+                if MODE == 'PAINT_GPENCIL':
+                    if not tool_active_id.startswith("builtin_brush"):
+                        op = clrow.operator(
+                            "bm.select_brush", text='',
+                            icon='GREASEPENCIL', depress=is_active)
+                        op.brush = brush
+                        op.from_list = "add_brush_popup"
+                        op.no_tool = True
+                op = clrow.operator("bm.select_brush", text=brush, depress=is_active)
+                op.brush = brush
+                op.from_list = 'add_brush_popup'
+                op.no_tool = False
 
         col = row.column(align=True)
-        col.scale_y = prefs.popup_items_scale
-        col.prop(self, "add_list", expand=True)
+        col.scale_y = popup_items_scale
+        for brush in brushes:
+            op = col.operator("bm.add_from_category", icon='ADD', text='', emboss=True)
+            op.brush_name = brush
         #////////////////////////////////
         icons = get_favorite_brushes(list_type='icons')
         row = col2.row(align=True)
         col = row.column(align=True)
         for i, icon in enumerate(icons):
-            col.template_icon(icon_value=icon, scale=prefs.popup_items_scale)
+            col.template_icon(icon_value=icon, scale=popup_items_scale)
         col = row.column(align=True)
-        col.scale_y = prefs.popup_items_scale
-        col.prop(wm, "fav_brush_popup", expand=True)
+        col.scale_y = popup_items_scale
+
+        draw_favorite_brushes(col, context)
 
         col = row.column(align=True)
-        col.scale_y = prefs.popup_items_scale
-        col.prop(wm, "bm_edit_fav_list", expand=True)
+        col.scale_y = popup_items_scale
+
+        draw_remove_fav_brushes(col, context)
 
 
-class WM_OT_Settings_Popup(Operator):
+class POPUP_OT_Settings_Popup(Operator):
     bl_label = 'Settings'
     bl_idname = 'bm.settings_popup'
     bl_description = "Show preference settings of the Brush Manager add-on"
@@ -2395,7 +3210,7 @@ class WM_OT_Settings_Popup(Operator):
         return {'FINISHED'}
 
     def draw(self, context):
-        prefs = context.preferences.addons[Addon_Name].preferences
+        prefs = bpy.context.preferences.addons[Addon_Name].preferences
         props = context.window_manager.brush_manager_props
         wm = bpy.context.window_manager
 
@@ -2415,8 +3230,79 @@ class WM_OT_Settings_Popup(Operator):
             )
 
     def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=500)
+        prefs = context.preferences.addons[Addon_Name].preferences
+        if context.mode == 'SCULPT' or context.mode == 'PAINT_TEXTURE' or\
+                context.mode == 'PAINT_GPENCIL':
+            prefs.pref_tabs = context.mode
+        return context.window_manager.invoke_props_dialog(self, width=520)
         # return context.window_manager.invoke_popup(self, width=500)
+
+
+class PREF_OT_Save_Settings(Operator):
+    bl_label = 'Save Settings'
+    bl_idname = 'bm.save_pref_settings'
+    bl_description = "Save preference settings to the json file"
+
+    def execute(self, context):
+        prefs = context.preferences.addons[Addon_Name].preferences
+        user_path = bpy.utils.resource_path('USER')
+        config_path = os.path.join(user_path, "config")
+        json_file = os.path.join(config_path, "BrushManager_settings.json")
+        pref_data = {}
+        for pr in prefs.__annotations__:
+            if pr == 'show_common' or pr == 'pref_tabs':
+                continue
+            if pr == 'show_keymaps' or pr == 'show_UI':
+                continue
+            pref_data[pr] = eval("prefs." + pr)
+        pref_data['keymaps_state'] = get_current_keymaps()
+
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(pref_data, f, ensure_ascii=False, indent=4)
+
+        msg = "Brush Manager: Settings has been saved to " + json_file
+        self.report({'INFO'}, msg)
+
+        return {'FINISHED'}
+
+
+def load_saved_keymaps(context, load_keymaps):
+    keymaps = context.window_manager.keyconfigs.user.keymaps
+    for km, kmi in addon_keymaps:
+        for i in load_keymaps[km.name]:
+            exec('keymaps[km.name].keymap_items[kmi.idname].' + i + ' = load_keymaps[km.name].get(i)')
+
+
+class PREF_OT_Load_Settings(Operator):
+    bl_label = 'Load Settings'
+    bl_idname = 'bm.load_pref_settings'
+    bl_description = "Load preference settings from saved json file"
+
+    def execute(self, context):
+        prefs = context.preferences.addons[Addon_Name].preferences
+        user_path = bpy.utils.resource_path('USER')
+        config_path = os.path.join(user_path, "config")
+        json_file = os.path.join(config_path, "BrushManager_settings.json")
+        if not os.path.isfile(json_file):
+            msg = "Brush Manager: The settings file does not exist or it have not been saved yet."
+            self.report({'WARNING'}, msg)
+            return {'FINISHED'}
+        global LOADING_SETTINGS
+        LOADING_SETTINGS = True
+        f = open(json_file)
+        pref_data = json.load(f)
+        for pr in pref_data:
+            value = pref_data.get(pr)
+            exec("if hasattr(prefs, pr): prefs." + pr + " = value")
+            if pr == 'keymaps_state':
+                load_keymaps = pref_data.get(pr)
+                load_saved_keymaps(context, load_keymaps)
+        f.close()
+        LOADING_SETTINGS = False
+        msg = "Brush Manager: Settings has been loaded from " + json_file
+        self.report({'INFO'}, msg)
+
+        return {'FINISHED'}
 
 
 classes = (
@@ -2440,18 +3326,85 @@ classes = (
     WM_MT_BrushManager_Ops,
     PREF_OT_Refresh_Brushes_Data_List,
     SCULPT_PT_Brush_Manager,
-    WM_MT_Favorite_Popup_Menu,
-    WM_MT_Edit_Favorites_Popup,
-    WM_MT_Add_to_Favorites_Popup,
-    WM_OT_Settings_Popup,
+    GPENCIL_PT_Brush_Manager,
+    POPUP_OT_Tools_and_Brushes,
+    POPUP_OT_Edit_Favorites_Popup,
+    POPUP_OT_Add_to_Favorites_Popup,
+    POPUP_OT_Settings_Popup,
     Brushes_Data_Collection,
     BM_Favorite_list_settings,
     BrushManager_Preferences,
-    Manager_Scene_Properties
+    BrushManager_Properties,
+    WM_OT_Set_Category,
+    WM_OT_Set_Select_Brush,
+    WM_OT_Select_Brush,
+    WM_OT_Add_from_Category,
+    WM_OT_Add_from_Category_all_the_rest,
+    WM_OT_Remove_from_Favorites,
+    PREF_OT_Save_Settings,
+    PREF_OT_Load_Settings,
+    PREF_OT_assign_to_similar_settings
 )
 
 preview_brushes_coll = {}
 addon_keymaps = []
+supported_keymaps = [
+    'Sculpt',
+    'Image Paint',
+    'Grease Pencil Stroke Paint Mode',
+]
+bm_keymap_items = {
+    'map_type': 'KEYBOARD',
+    'type': 'SPACE',
+    'any': False,
+    'value': 'PRESS',
+    'ctrl': False,
+    'shift': False,
+    'alt': True,
+    'oskey': False,
+    'repeat': True,
+    'key_modifier': 'NONE',
+    'active': True,
+}
+keymaps_state = dict([(km, bm_keymap_items) for km in supported_keymaps])
+
+
+def register_keymaps():
+    addon_keymaps.clear()
+    winm = bpy.context.window_manager
+    keyconf = winm.keyconfigs.addon
+    if keyconf:
+        for km in keymaps_state:
+            keymap = keyconf.keymaps.new(name=km, space_type='EMPTY', region_type='WINDOW')
+            keymap_item = keymap.keymap_items.new(
+                "bm.tools_and_brushes_popup", type='SPACE', value='PRESS', alt=True
+            )
+            for i in keymaps_state[km]:
+                exec('keymap_item.' + i + ' = keymaps_state[km].get(i)')
+            addon_keymaps.append((keymap, keymap_item))
+
+
+def unregister_keymaps():
+    for km, kmi in addon_keymaps:
+        km.keymap_items.remove(kmi)
+    addon_keymaps.clear()
+
+
+def get_current_keymaps():
+    stored_keymaps = {}
+    wm = bpy.context.window_manager
+    kc = wm.keyconfigs.user
+    for km in keymaps_state:
+        stored_keymaps[km] = {}
+        for k in kc.keymaps[km].keymap_items:
+            if k.idname == "bm.tools_and_brushes_popup" and k.active:
+                for i in keymaps_state[km]:
+                    exec('stored_keymaps[km][i] = k.' + i)
+    return stored_keymaps
+
+
+def pre_template_keymaps_save():
+    keymaps_state.update(get_current_keymaps())
 
 
 def register():
@@ -2477,17 +3430,14 @@ def register():
         register_class(cls)
 
     wm = bpy.types.WindowManager
-    wm.brush_manager_props = PointerProperty(type=Manager_Scene_Properties)
+    wm.brush_manager_props = PointerProperty(type=BrushManager_Properties)
     wm.bm_brushes_data_list = CollectionProperty(type=Brushes_Data_Collection)
     wm.bm_sculpt_fav_list_store = CollectionProperty(type=BM_Favorite_list_settings)
+    wm.bm_paint_fav_list_store = CollectionProperty(type=BM_Favorite_list_settings)
+    wm.bm_gpaint_fav_list_store = CollectionProperty(type=BM_Favorite_list_settings)
     bpy.types.Scene.bm_favorite_list_settings = bpy.props.CollectionProperty(type=BM_Favorite_list_settings)
-
-    winm = bpy.context.window_manager
-    keyconf = winm.keyconfigs.addon
-    if keyconf:
-        keymap = keyconf.keymaps.new(name='Sculpt', space_type='EMPTY', region_type='WINDOW')
-        keymap_item = keymap.keymap_items.new("view3d.favorite_brushes_popup", type='SPACE', value='PRESS', alt=True)
-        addon_keymaps.append((keymap, keymap_item))
+    bpy.types.Scene.bm_paint_favorite_settings = bpy.props.CollectionProperty(type=BM_Favorite_list_settings)
+    bpy.types.Scene.bm_gpaint_favorite_settings = bpy.props.CollectionProperty(type=BM_Favorite_list_settings)
 
     bpy.app.handlers.load_post.append(brush_manager_on_file_load)
     bpy.app.handlers.save_pre.append(brush_manager_pre_save)
@@ -2497,12 +3447,12 @@ def register():
     bpy.app.handlers.undo_post.append(brush_manager_post_undo)
     set_brushes_data_collection_items()
     update_panel(None, bpy.context)
+    register_keymaps()
 
 
 def unregister():
-    for km, kmi in addon_keymaps:
-        km.keymap_items.remove(kmi)
-    addon_keymaps.clear()
+    if prefs().persistent_keymaps:
+        pre_template_keymaps_save()
 
     from bpy.utils import unregister_class
     for cls in classes:
@@ -2526,7 +3476,12 @@ def unregister():
     del bpy.types.WindowManager.brush_manager_props
     del bpy.types.WindowManager.bm_brushes_data_list
     del bpy.types.WindowManager.bm_sculpt_fav_list_store
+    del bpy.types.WindowManager.bm_paint_fav_list_store
+    del bpy.types.WindowManager.bm_gpaint_fav_list_store
     del bpy.types.Scene.bm_favorite_list_settings
+    del bpy.types.Scene.bm_paint_favorite_settings
+    del bpy.types.Scene.bm_gpaint_favorite_settings
+    unregister_keymaps()
 
 
 if __name__ == "__main__":
