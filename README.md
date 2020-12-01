@@ -32,6 +32,23 @@ Support Blender version: **2.83+**
 
 # Change Log
 
+**Brush Manager 1.2.0**
+
+- Added Support of **Image Paint** and **Grease Pencil Draw** modes with new UI layout for these modes.
+- New Preference Setting '*Hide Preview Frame*' for Sculpt mode, that hides the brush preview frame, to make UI layout the same look, as its like in other modes.
+- Preference Setting Layout has been changed and organized with the rolled out sections.
+- New Preference Setting '*Persistent Keymaps*' help you keep the same user defined keymaps when the app template has been loaded.
+- New Preference Setting '*Hide Annotate Tools in Popup*', now you can hide or unhide Annotate tools in the tools list.
+- New Preference Setting '*Close Popup on Tool Select*', if turned on (On by default), then close popup windows when brush or tool have been selected.
+- New Brush buttons design that can be added to quick favorites builtin menu. Now they correctly represent active selected brush in the current context.
+- Now Brush Manager Preference Settings can be saved in json file and later loaded with the help of new operator buttons, that are located in the preference settings.
+- Added search bar filter in '*Add to Favorites from Category List*' popup.
+- Added 'Add All the Rest' operator in '*Add to Favorites from Category List*' popup.
+- Changed add-on category location in the Preferences from '*Sculpting*' to '*Interface*'.
+
+![](images/Prederences1.2.0_r.png)
+![](images/add_from_category1.2.0.png)
+
 **Brush Manager 1.1.7**
 
 - Added Sculpt Tools to the popup window.
