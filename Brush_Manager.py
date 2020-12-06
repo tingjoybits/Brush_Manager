@@ -2345,7 +2345,6 @@ def draw_similar_settings(self, context, layout, mode=''):
     bm = modes.mode_prefixes.get(mode)
     box = layout.box()
 
-    # row = box.row(align=True)
     row = box.row()
     if self.show_tools:
         row.prop(self, "show_tools", icon='TRIA_DOWN', toggle=True)
@@ -2385,7 +2384,7 @@ def draw_similar_settings(self, context, layout, mode=''):
                 except AttributeError:
                     continue
         if not is_split_tools:
-            return prop_col
+            return prop_col, box
         row = box.row(align=True)
         row.label(text="Brush Tools:")
         row = box.row(align=True)
@@ -2398,7 +2397,7 @@ def draw_similar_settings(self, context, layout, mode=''):
     else:
         row.prop(self, "show_tools", icon='TRIA_RIGHT', toggle=True)
 
-    return prop_col
+    return prop_col, box
 
 
 def draw_preferences(self, context, layout):
@@ -2434,7 +2433,7 @@ def draw_preferences(self, context, layout):
 
     modes = BM_Modes()
     if self.pref_tabs in modes.in_modes:
-        prop_col = draw_similar_settings(self, context, layout, mode=self.pref_tabs)
+        prop_col, tools_box = draw_similar_settings(self, context, layout, mode=self.pref_tabs)
     if self.pref_tabs == 'SCULPT':
         box = prop_col.box()
         grid = box.grid_flow(columns=2, align=True)
@@ -2445,6 +2444,17 @@ def draw_preferences(self, context, layout):
         row.prop(self, "force_brush_custom_icon")
         grid.prop(self, "sculpt_hide_preview")
         grid.prop(self, "switch_mode_on_save")
+
+        wm = bpy.context.window_manager
+        box = tools_box
+        row = box.row(align=True)
+        row.label(text="Custom Default Brush Slots:")
+        row.prop(self, "default_brushes_custom_slots", text="")
+        row.operator("bm.refresh_brushes_data_list", icon='FILE_REFRESH')
+        row = box.row(align=True)
+        grid = row.grid_flow(columns=3, align=True)
+        for i in range(self.default_brushes_custom_slots):
+            grid.prop_search(self, 'add_def_brush_' + str(i), wm, "bm_brushes_data_list", text="")
     if self.pref_tabs == 'PAINT_WEIGHT':
         box = prop_col.box()
         grid = box.grid_flow(columns=2, align=True)
