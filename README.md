@@ -7,7 +7,7 @@ Support Blender version: **2.83+**
 
 # Installation
 
-- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.2.0/Brush_Manager120.zip)<- file
+- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.2.3/Brush_Manager123.zip)<- file
 - Open Blender and select Edit->Preferences
 - Click Add-ons category and then 'Install...' button
 - Select the downloaded file
@@ -33,6 +33,16 @@ Support Blender version: **2.83+**
 ![Themes](images/brush_manager_themes.png)
 
 # Change Log
+
+**Brush Manager 1.2.3**
+
+- Added support of **Weight Paint**, **Vertex Paint**, **GPencil Vertex Paint** modes.
+- Now in the Settings you able to hide a specific non-brush tools in the popup window.
+- Now popup window does not depend on Texture Paint context mode if you want to work in the Image Editor Paint mode.
+	Its not the best idea, but to have the ability to call popup window from Object mode, for instance, should be there.
+- Now the current category of brushes will stay the same for each mode from the moment that you left, while switching modes.
+- Better handling of icon assignment while switching modes (If you had stumble upon on unwanted behavior, then updating is recommended).
+- Overall code improvement and several small fixes.
 
 **Brush Manager 1.2.0**
 
