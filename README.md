@@ -34,6 +34,10 @@ Support Blender version: **2.83+**
 
 # Change Log
 
+**Brush Manager 1.2.3a**
+
+- Bring back Custom Brush Slots
+
 **Brush Manager 1.2.3**
 
 - Added support of **Weight Paint**, **Vertex Paint**, **GPencil Vertex Paint** modes.
