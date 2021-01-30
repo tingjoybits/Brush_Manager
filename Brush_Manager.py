@@ -487,7 +487,8 @@ def get_copy_number(name):
     if check_name == '':
         check_name = name
     for b in brushes:
-        if b.startswith(check_name):
+        if b.startswith(check_name) and\
+                len(check_name) == len('.'.join(b.split('.')[0:-1])):
             if b.split('.')[-1].isdigit():
                 name_digits.append(b)
     name_digits.sort()
