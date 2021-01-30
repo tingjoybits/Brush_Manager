@@ -7,7 +7,7 @@ Support Blender version: **2.83+**
 
 # Installation
 
-- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.2.3/Brush_Manager123a.zip)<- file
+- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.2.5/Brush_Manager125.zip)<- file
 - Open Blender and select Edit->Preferences
 - Click Add-ons category and then 'Install...' button
 - Select the downloaded file
@@ -33,6 +33,20 @@ Support Blender version: **2.83+**
 ![Themes](images/brush_manager_themes.png)
 
 # Change Log
+
+- New popup editor for the Library Categories. You can access it from the menu with *'Edit Brushes from Category'* operator. Editor window contains the brush list of the corresponding category and a several new operations, that helps you to edit some properties of the selected brushes.
+- Operator *'Refresh Brush Data'* for the category editor, that can refresh the selected brushes data and return to the settings of their library files.
+- Operator *'Save Brushes'* for the category editor, that helps you to save a specific list of the selected brushes from the active category. Easy way to pick and save some brushes from various appended libraries that could be listed in the Current File category. That way you don't have to mess around with the favorites list.
+- Operator *'Delete Brush Data'* for the category editor, that deletes the brush data of the selected brushes.
+- Operator *'Change Icon Folder Path'* for the category editor, that changes a folder path to the same custom icon file name of the selected brushes in the edit list. Basically helps you to relocate missing icons to the new path.
+- Operator *'Switch Custom Icon'* for the category editor, that turns on/off custom icons of the selected brushes in the edit list.
+- Operator *'Switch Fake User'* for the category editor, that can applies/removes fake user of the selected brushes in the edit list.
+- New theme icons for **Multires Displacement Smear** in Blender 2.92.
+- New options to *'Overwrite', 'Auto Rename'* or *'Skip'* for duplicates while appending from a file to the favorites.
+- Appending to the Favorites no longer produce duplicates with the same name.
+
+![](icon_themes/round%20basic/displacement_smear.png)
+![](images/appending_duplicates.png)
 
 **Brush Manager 1.2.3a**
 
