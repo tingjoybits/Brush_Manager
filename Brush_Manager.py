@@ -462,12 +462,12 @@ def check_brush_type(brush, mode=''):
     return modes.brush_use_mode(brush)
 
 
-def get_append_brushes(directory, b_files, exclude_default=True):
+def get_append_brushes(directory, b_files, default_brushes=False):
     brushes_append = []
     brushes_in_files = get_brushes_in_files(directory, b_files)
-    default_brushes = get_default_brushes_list()
+    def_brushes = get_default_brushes_list()
     for brush in brushes_in_files:
-        if brush in default_brushes and exclude_default:
+        if brush in def_brushes and not default_brushes:
             continue
         try:
             if not check_brush_type(bpy.data.brushes[brush]):
@@ -480,19 +480,69 @@ def get_append_brushes(directory, b_files, exclude_default=True):
     return brushes_append
 
 
-def append_brushes_from_a_file(filepath):
+def get_copy_number(name):
+    name_digits = []
+    brushes = get_current_file_brushes()
+    check_name = '.'.join(name.split('.')[0:-1])
+    if check_name == '':
+        check_name = name
+    for b in brushes:
+        if b.startswith(check_name):
+            if b.split('.')[-1].isdigit():
+                name_digits.append(b)
+    name_digits.sort()
+    if name_digits:
+        return name_digits[-1]
+    return False
+
+
+def auto_rename(name):
+    digits = '001'
+    copy_number = get_copy_number(name)
+    if copy_number:
+        name = copy_number
+    if name.split(".")[-1].isdigit():
+        zeroes = ''
+        for i in range(len(name.split('.')[-1])):
+            if int(name.split('.')[-1][i]) > 0:
+                digits = zeroes + str(int(name.split('.')[-1]) + 1)
+                break
+            else:
+                zeroes += '0'
+        return '.'.join(name.split('.')[0:-1]) + '.' + digits
+    else:
+        return name + '.' + digits
+
+
+def append_brushes_from_a_file(filepath, default_brushes=False, duplicates='SKIP'):
     brushes = []
+    brushes_to_rename = []
+    duplicates_list = []
     def_brushes = get_default_brushes_list(mode=MODE)
     with bpy.data.libraries.load(filepath) as (data_from, data_to):
         for brush in data_from.brushes:
+            if brush in def_brushes and not default_brushes:
+                continue
             if brush not in bpy.data.brushes:
                 data_to.brushes.append(brush)
                 brushes.append(brush)
                 continue
-            if brush in def_brushes:
+            elif duplicates == 'OVERWRITE':
+                bpy.data.brushes.remove(bpy.data.brushes[brush], do_unlink=True)
+                data_to.brushes.append(brush)
+            elif duplicates == 'RENAME':
+                b = bpy.data.brushes[brush]
+                b.name = b.name + " {ORIGINAL}"
+                data_to.brushes.append(brush)
+                brushes_to_rename.append(brush)
                 continue
             # !! Append even if the same brush is already exists
             brushes.append(brush)
+    for br in brushes_to_rename:
+        name = auto_rename(br)
+        bpy.data.brushes[br].name = name
+        brushes.append(name)
+        bpy.data.brushes[br + " {ORIGINAL}"].name = br
     return brushes
 
 
@@ -685,7 +735,7 @@ def get_favorite_brushes(list_type='brushes'):
 
 def add_to_fav_active_current_brush(context, brushes_list):
     active_brush = get_active_brush(context)
-    if not active_brush:
+    if not active_brush or active_brush.name in brushes_list:
         return brushes_list
     brushes_list.append(active_brush.name)
     brushes_list.sort()
@@ -986,10 +1036,10 @@ def load_startup_favorites(list_type='SCULPT'):
         return None
     b_preview_fav = preview_brushes_coll["favorites"]
     b_preview_fav.my_previews_dir = "favorites"
-    append_brushes_from_a_file(path)
+    append_brushes_from_a_file(path, default_brushes=True)
     brushes_in_file = get_append_brushes(
         os.path.dirname(path), b_files=[os.path.basename(path)],
-        exclude_default=False
+        default_brushes=True
     )
     brushes_in_file.sort()
     enum_items = create_enum_list(bpy.context, brushes_in_file, b_preview_fav)
@@ -1510,7 +1560,7 @@ class WM_OT_Append_List_to_the_Favorites(Operator):
         main_preview_enums = b_preview_main.my_previews
         main_brushes = get_brushes_from_preview_enums(main_preview_enums)
         fav_brushes = get_favorite_brushes()
-        brushes = main_brushes + fav_brushes
+        brushes = list(set(main_brushes + fav_brushes))
         brushes.sort()
         enum_items = create_enum_list(context, brushes, b_preview_fav)
         b_preview_fav.my_previews = enum_items
@@ -1522,10 +1572,19 @@ class WM_OT_Append_from_a_File_to_Favorites(Operator):
     bl_idname = 'bm.append_from_a_file_to_favorites'
     bl_description = "Append the brushes library from a file to the Favorites"
 
-    exclude_default_brushes: bpy.props.BoolProperty(
-        name="Exclude the Default Brushes",
-        default=False,
-        description="Exclude the default brushes from the list",
+    default_brushes: bpy.props.BoolProperty(
+        name="Default Brushes",
+        default=True,
+        description="Include/Exclude the default brushes in the appending list",
+    )
+    duplicates: EnumProperty(
+        name="Duplicates",
+        items=[
+            ("RENAME", "Auto Rename", 'Auto rename the copyied brush if already exist'),
+            ("OVERWRITE", "Overwrite", 'Overwrite if already exist'),
+            ("SKIP", "Skip", 'Skip if already exist'),
+        ],
+        default="SKIP"
     )
     directory: bpy.props.StringProperty(
         subtype="DIR_PATH"
@@ -1537,6 +1596,10 @@ class WM_OT_Append_from_a_File_to_Favorites(Operator):
         subtype="FILE_PATH"
     )
 
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
     def execute(self, context):
         if not self.filepath.endswith(".blend"):
             msg = "Selected file has to be a .blend file"
@@ -1544,26 +1607,28 @@ class WM_OT_Append_from_a_File_to_Favorites(Operator):
 
             return {'FINISHED'}
 
+        modes = BM_Modes()
+        ts = modes.tool_settings(context)
+        active_brush_name = ts.brush.name
+
         b_preview_fav = preview_brushes_coll["favorites"]
         b_preview_fav.my_previews_dir = "favorites"
-        append_brushes_from_a_file(self.filepath)
-        brushes_in_file = get_append_brushes(
-            self.directory, b_files=[self.filename],
-            exclude_default=self.exclude_default_brushes
+        brushes_in_file = append_brushes_from_a_file(
+            self.filepath,
+            default_brushes=self.default_brushes,
+            duplicates=self.duplicates
         )
         fav_brushes = get_favorite_brushes()
-        brushes = brushes_in_file + fav_brushes
+        brushes = list(set(brushes_in_file + fav_brushes))
         brushes.sort()
         enum_items = create_enum_list(context, brushes, b_preview_fav)
         b_preview_fav.my_previews = enum_items
+        ts.brush = bpy.data.brushes[active_brush_name]
+
         msg = "Brushes loaded from: " + self.filepath
         self.report({'INFO'}, msg)
 
         return {'FINISHED'}
-
-    def invoke(self, context, event):
-        context.window_manager.fileselect_add(self)
-        return {'RUNNING_MODAL'}
 
 
 class WM_OT_Remove_Active_Favorite(Operator):
@@ -1683,10 +1748,10 @@ class WM_OT_Save_Favorites(Operator):
         default=True,
         description="Remap relative paths when saving to a different directory",
     )
-    exclude_default_brushes: bpy.props.BoolProperty(
-        name="Exclude the Default Brushes",
-        default=False,
-        description="Exclude the default brushes from the list",
+    default_brushes: bpy.props.BoolProperty(
+        name="Default Brushes",
+        default=True,
+        description="Include/Exclude the default brushes in the saving list",
     )
     filepath: bpy.props.StringProperty(
         subtype="FILE_PATH"
@@ -1702,7 +1767,7 @@ class WM_OT_Save_Favorites(Operator):
         brushes_data = []
         brushes_failed = ''
         for b in brushes_list:
-            if b in def_brushes and self.exclude_default_brushes:
+            if b in def_brushes and not self.default_brushes:
                 continue
             try:
                 if check_brush_type(bpy.data.brushes[b]):
@@ -1945,6 +2010,7 @@ class WM_MT_BrushManager_Ops(Menu):
         if prefs.move_add_to_favorite_op:
             layout.operator('bm.add_brush_to_favorites', icon='ADD')
         layout.operator("bm.append_list_to_favorites", icon='APPEND_BLEND')
+        layout.operator("bm.edit_brushes_from_category_popup", icon='SHORTDISPLAY')
         if (context.space_data.type == 'VIEW_3D' and context.region.type == 'WINDOW'):
             layout.separator()
             if prefs.hide_header:
@@ -2671,15 +2737,15 @@ class BrushManager_Preferences(AddonPreferences):
     selected_brush_custom_icon: BoolProperty(
         name="Auto Apply Theme to the Selected Brush",
         default=False,
-        description="On file load turn on option that is allows for the Brush Manager to automatically\
- apply a custom icon to the selected brush from any category list if it has not applied yet. It can be accessed in the panel menu",
+        description="Allows for the Brush Manager to automatically\
+ apply a custom icon to the selected brush from any category list if it has not applied yet.",
         update=update_pref_apply_theme_to_selected
     )
     force_brush_custom_icon: BoolProperty(
         name="Force to Apply Theme to the Selected Brush",
         default=False,
-        description="On file load turn on option that is allows for the Brush Manager a force to set a custom icon\
- to the selected brush even if it has been applied already. It can be accessed in the panel menu",
+        description="Allows for the Brush Manager a force to set a custom icon\
+ to the selected brush even if it has been applied already.",
         update=update_pref_force_apply_theme_to_sel
     )
     save_favorites_list: BoolProperty(
@@ -3309,6 +3375,370 @@ class POPUP_OT_Edit_Favorites_Popup(Operator):
         draw_remove_fav_brushes(col, context)
 
 
+class WM_MT_Edit_from_Category_Ops(Menu):
+    bl_label = "Operations"
+    bl_idname = "BMANAGER_MT_Edit_Operations_menu"
+
+    def draw(self, context):
+        prefs = context.preferences.addons[Addon_Name].preferences
+        props = context.window_manager.brush_manager_props
+        layout = self.layout
+        layout.operator("bm.save_selected_brushes", icon='EXPORT')
+        layout.separator()
+        op = layout.operator("bm.switch_fake_user", text='Apply Fake User', icon='FAKE_USER_ON')
+        op.switch = True
+        op = layout.operator("bm.switch_fake_user", text='Remove Fake User', icon='FAKE_USER_OFF')
+        op.switch = False
+        layout.separator()
+        op = layout.operator("bm.switch_custom_icon", text='Turn On Custom Icon', icon='FILE_IMAGE')
+        op.switch = True
+        op = layout.operator("bm.switch_custom_icon", text='Turn Off Custom Icon', icon='MATPLANE')
+        op.switch = False
+        layout.separator()
+        layout.operator("bm.change_icon_path_in_edit_list", icon='FILEBROWSER')
+        layout.separator()
+        row = layout.row()
+        row.enabled = (props.lib_categories != 'Current File' and props.lib_categories != 'Default')
+        row.operator("bm.refresh_brush_data_in_edit_list", icon='UV_SYNC_SELECT')
+        layout.separator()
+        layout.operator("bm.delete_brush_data_in_edit_list", icon='TRASH')
+
+
+PICK_EDIT_LIST = []
+BRUSHES_IN_CATEGORY = []
+
+
+class WM_OT_Pick_Brush(Operator):
+    bl_label = 'Pick Brush'
+    bl_idname = 'bm.pick_brush'
+    bl_description = "Select brush to edit"
+
+    brush: bpy.props.StringProperty()
+
+    def execute(self, context):
+        global PICK_EDIT_LIST
+        if self.brush in PICK_EDIT_LIST:
+            PICK_EDIT_LIST = [b for b in PICK_EDIT_LIST if b != self.brush]
+        else:
+            PICK_EDIT_LIST.append(self.brush)
+        return {'FINISHED'}
+
+
+class WM_OT_Pick_Select_All_Brushes(Operator):
+    bl_label = 'Select All'
+    bl_idname = 'bm.select_all_brushes_in_edit_list'
+    bl_description = "Select all brushes in the edit list"
+
+    def execute(self, context):
+        global PICK_EDIT_LIST
+        PICK_EDIT_LIST = get_popup_add_list()
+        return {'FINISHED'}
+
+
+class WM_OT_Pick_Deselect_All_Brushes(Operator):
+    bl_label = 'Deselect All'
+    bl_idname = 'bm.deselect_all_brushes_in_edit_list'
+    bl_description = "Deselect all brushes in the edit list"
+
+    def execute(self, context):
+        global PICK_EDIT_LIST
+        PICK_EDIT_LIST.clear()
+        return {'FINISHED'}
+
+
+class WM_OT_Pick_Invert_Selected_Brushes(Operator):
+    bl_label = 'Invert Selection'
+    bl_idname = 'bm.invert_selected_brushes_in_edit_list'
+    bl_description = "Invert selected brushes in the edit list"
+
+    def execute(self, context):
+        global PICK_EDIT_LIST
+        PICK_EDIT_LIST = [b for b in get_popup_add_list() if b not in PICK_EDIT_LIST]
+        return {'FINISHED'}
+
+
+class WM_OT_Pick_Delete_Brush_Data(Operator):
+    bl_label = 'Delete Brush Data'
+    bl_idname = 'bm.delete_brush_data_in_edit_list'
+    bl_description = "Delete the selected brushes data in the edit list"
+
+    def execute(self, context):
+        global PICK_EDIT_LIST
+        global BRUSHES_IN_CATEGORY
+        brushes_in_cat = get_popup_add_list()
+        remove_brushes = [b for b in brushes_in_cat if b in PICK_EDIT_LIST]
+        if not remove_brushes:
+            msg = "Brush Manager: Brushes has not been selected."
+            self.report({'ERROR'}, msg)
+            return {'FINISHED'}
+        fav_brushes = get_favorite_brushes()
+        remove_favorites = [b for b in remove_brushes if b in fav_brushes]
+        remove_fav_brush(self, context, remove_favorites)
+        set_first_preview_item(context, fav_brushes, wm_enum_prop='fav')
+        BRUSHES_IN_CATEGORY = [
+            (n1, n2, b, iid, i)
+            for n1, n2, b, iid, i in BRUSHES_IN_CATEGORY
+            if n1 not in remove_brushes
+        ]
+        props = context.window_manager.brush_manager_props
+        props.lib_categories = 'Current File'
+        for brush in remove_brushes:
+            try:
+                b = bpy.data.brushes[brush]
+            except KeyError:
+                continue
+            bpy.data.brushes.remove(b, do_unlink=True)
+        update_brush_list(self, context)
+        return {'FINISHED'}
+
+
+class WM_OT_Pick_Refresh_Brush_Data(Operator):
+    bl_label = 'Refresh Brush Data'
+    bl_idname = 'bm.refresh_brush_data_in_edit_list'
+    bl_description = (
+        "Refresh the selected brushes data and return to the settings from their library files."
+        " Works with other than 'Default' or 'Current File' categories"
+    )
+
+    def execute(self, context):
+        global PICK_EDIT_LIST
+        global BRUSHES_IN_CATEGORY
+        brushes_in_cat = get_popup_add_list()
+        remove_brushes = [b for b in brushes_in_cat if b in PICK_EDIT_LIST]
+        if not remove_brushes:
+            msg = "Brush Manager: Brushes has not been selected."
+            self.report({'ERROR'}, msg)
+            return {'FINISHED'}
+        modes = BM_Modes()
+        ts = modes.tool_settings(context)
+        active_brush_name = ts.brush.name
+        for brush in remove_brushes:
+            try:
+                b = bpy.data.brushes[brush]
+            except KeyError:
+                continue
+            bpy.data.brushes.remove(b, do_unlink=True)
+
+        global UPDATE_ICONS
+        UPDATE_ICONS = True
+
+        update_brush_list(self, context)
+        update_fav_list(self, context)
+        preview_brushes_in_folders(self, context)
+        preview_brushes_in_favorites(self, context)
+        ts.brush = bpy.data.brushes[active_brush_name]
+        popup_close()
+
+        return {'FINISHED'}
+
+
+class WM_OT_Pick_Change_Icon_Path(Operator):
+    bl_label = 'Change Icon Folder Path'
+    bl_idname = 'bm.change_icon_path_in_edit_list'
+    bl_description = "Change a folder path to the same custom icon file name of the selected brushes in the edit list"
+
+    directory: bpy.props.StringProperty(
+        subtype="DIR_PATH"
+    )
+
+    def __init__(self):
+        self.brushes = []
+
+    def invoke(self, context, event):
+        global PICK_EDIT_LIST
+        brushes_in_cat = get_popup_add_list()
+        self.brushes = [b for b in brushes_in_cat if b in PICK_EDIT_LIST]
+        if not self.brushes:
+            msg = "Brush Manager: Brushes has not been selected."
+            self.report({'ERROR'}, msg)
+            return {'FINISHED'}
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        for brush in self.brushes:
+            try:
+                b = bpy.data.brushes[brush]
+            except KeyError:
+                continue
+            file_name = os.path.basename(b.icon_filepath)
+            filepath = os.path.join(self.directory, file_name)
+            b.icon_filepath = filepath
+
+        global UPDATE_ICONS
+        UPDATE_ICONS = True
+        update_category(self, context)
+
+        return {'FINISHED'}
+
+
+class WM_OT_Switch_Custom_Icon(Operator):
+    bl_label = 'Switch Custom Icon'
+    bl_idname = 'bm.switch_custom_icon'
+    bl_description = "Turn on/off custom icons of the selected brushes in the edit list"
+
+    switch: BoolProperty(default=False)
+
+    def execute(self, context):
+        global PICK_EDIT_LIST
+
+        brushes_in_cat = get_popup_add_list()
+        brushes = [b for b in brushes_in_cat if b in PICK_EDIT_LIST]
+        if not brushes:
+            msg = "Brush Manager: Brushes has not been selected."
+            self.report({'ERROR'}, msg)
+            return {'FINISHED'}
+        for brush in brushes:
+            try:
+                b = bpy.data.brushes[brush]
+            except KeyError:
+                continue
+            b.use_custom_icon = self.switch
+
+        global UPDATE_ICONS
+        UPDATE_ICONS = True
+        update_category(self, context)
+
+        return {'FINISHED'}
+
+
+class WM_OT_Switch_Fake_User(Operator):
+    bl_label = 'Switch Fake User'
+    bl_idname = 'bm.switch_fake_user'
+    bl_description = "Apply/Remove fake user of the selected brushes in the edit list"
+
+    switch: BoolProperty(default=False)
+
+    def execute(self, context):
+        global PICK_EDIT_LIST
+
+        brushes_in_cat = get_popup_add_list()
+        brushes = [b for b in brushes_in_cat if b in PICK_EDIT_LIST]
+        if not brushes:
+            msg = "Brush Manager: Brushes has not been selected."
+            self.report({'ERROR'}, msg)
+            return {'FINISHED'}
+        for brush in brushes:
+            try:
+                b = bpy.data.brushes[brush]
+            except KeyError:
+                continue
+            b.use_fake_user = self.switch
+
+        return {'FINISHED'}
+
+
+class WM_OT_Pick_Save_Brushes(Operator):
+    bl_label = 'Save Brushes'
+    bl_idname = 'bm.save_selected_brushes'
+    bl_description = "Save the selected brushes to a .blend file"
+
+    relative_remap: bpy.props.BoolProperty(
+        name="Remap Relative",
+        default=True,
+        description="Remap relative paths when saving to a different directory",
+    )
+    filepath: bpy.props.StringProperty(
+        subtype="FILE_PATH"
+    )
+
+    def __init__(self):
+        global PICK_EDIT_LIST
+        brushes_in_cat = get_popup_add_list()
+        self.brushes = [b for b in brushes_in_cat if b in PICK_EDIT_LIST]
+
+    def execute(self, context):
+        if self.filepath.endswith(".blend"):
+            blend_filepath = self.filepath
+        else:
+            blend_filepath = self.filepath + ".blend"
+
+        brushes_data = []
+        brushes_failed = ''
+        for b in self.brushes:
+            try:
+                if check_brush_type(bpy.data.brushes[b]):
+                    brushes_data.append(bpy.data.brushes[b])
+            except KeyError:
+                brushes_failed = brushes_failed + ' ' + '\"' + b + '\",'
+        if brushes_failed != '':
+            msg = "Save Brushes Error:" + brushes_failed + " data does not found."
+            self.report({'ERROR'}, msg)
+            return {'FINISHED'}
+        save_brushes_to_file(brushes_data, blend_filepath, relative_path_remap=self.relative_remap)
+        update_brush_list(self, context)
+        msg = "Brushes Saved to: " + blend_filepath
+        self.report({'INFO'}, msg)
+
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        if not self.brushes:
+            msg = "Brush Manager: Nothing to save, or brushes have not been selected."
+            self.report({'ERROR'}, msg)
+            return {'FINISHED'}
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
+class POPUP_OT_Edit_Category_Brushes_Popup(Operator):
+    bl_label = 'Edit Brushes from Category'
+    bl_idname = 'bm.edit_brushes_from_category_popup'
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        global PICK_EDIT_LIST
+        PICK_EDIT_LIST.clear()
+        update_brush_list(self, context)
+        brushes_enum = preview_brushes_in_folders(self, context)
+        set_brushes_in_category_list_popup(brushes_enum, exclude_fav=False)
+        return context.window_manager.invoke_popup(self, width=355)
+
+    def draw(self, context):
+        prefs = context.preferences.addons[Addon_Name].preferences
+        props = context.window_manager.brush_manager_props
+        wm = bpy.context.window_manager
+        modes = BM_Modes()
+        popup_items_scale = modes.popup_items_scale()
+
+        brushes = get_popup_add_list(list_type='icons_n_brushes')
+
+        layout = self.layout
+
+        row = layout.row(align=True)
+        col = row.column()
+
+        row = col.row(align=True)
+        col1 = row.column()
+        row1 = col1.row(align=True)
+        sr = row1.row(align=True)
+        sr.scale_x = 1.65
+        sr.prop(props, "search_bar", text='', icon='VIEWZOOM')
+        row1.prop(props, "search_case_sensitive", text='', icon='SMALL_CAPS')
+        col2 = row.column()
+        row2 = col2.row(align=True)
+        row2.label(text='')
+        row2.operator("bm.select_all_brushes_in_edit_list", text='', icon='CHECKMARK')
+        row2.operator("bm.deselect_all_brushes_in_edit_list", text='', icon='CHECKBOX_DEHLT')
+        row2.operator("bm.invert_selected_brushes_in_edit_list", text='', icon='SELECT_SUBTRACT')
+        sr = row2.row(align=True)
+        sr.scale_x = 1.3
+        sr.menu("BMANAGER_MT_Edit_Operations_menu")
+        col = col.column()
+        flow = col.column_flow(columns=2, align=True)
+        for brush, icon in brushes:
+            row = flow.row(align=True)
+            col = row.column(align=True)
+            col.template_icon(icon_value=icon, scale=popup_items_scale)
+            is_active = True if brush in PICK_EDIT_LIST else False
+            col = row.column(align=True)
+            col.scale_y = popup_items_scale
+            op = col.operator("bm.pick_brush", text=brush, emboss=True, depress=is_active)
+            op.brush = brush
+
+
 class WM_OT_Add_from_Category(Operator):
     bl_label = 'Add'
     bl_idname = 'bm.add_from_category'
@@ -3343,14 +3773,11 @@ class WM_OT_Remove_from_Favorites(Operator):
         return {'FINISHED'}
 
 
-BRUSHES_IN_CATEGORY = []
-
-
-def set_brushes_in_category_list_popup(brushes_enum):
+def set_brushes_in_category_list_popup(brushes_enum, exclude_fav=True):
     full = []
     fav_list = get_favorite_brushes()
     for name1, name2, blank, iconid, index in brushes_enum:
-        if name2 in fav_list:
+        if name2 in fav_list and exclude_fav:
             continue
         full.append((name1, name2, '', iconid, index))
     global BRUSHES_IN_CATEGORY
@@ -3361,6 +3788,7 @@ def get_popup_add_list(list_type=''):
     props = bpy.context.window_manager.brush_manager_props
     add = []
     icons = []
+    icons_n_brushes = []
     filter_name = str(props.search_bar.decode("utf-8"))
     for name1, name2, blank, iconid, index in BRUSHES_IN_CATEGORY:
         if filter_name and not props.search_case_sensitive:
@@ -3371,8 +3799,11 @@ def get_popup_add_list(list_type=''):
                 continue
         icons.append(iconid)
         add.append(name1)
+        icons_n_brushes.append((name1, iconid))
     if list_type == 'icons':
         return icons
+    if list_type == 'icons_n_brushes':
+        return icons_n_brushes
     return add
 
 
@@ -3643,7 +4074,19 @@ classes = (
     WM_OT_Remove_from_Favorites,
     PREF_OT_Save_Settings,
     PREF_OT_Load_Settings,
-    PREF_OT_assign_to_similar_settings
+    PREF_OT_assign_to_similar_settings,
+    WM_OT_Pick_Brush,
+    POPUP_OT_Edit_Category_Brushes_Popup,
+    WM_OT_Pick_Select_All_Brushes,
+    WM_OT_Pick_Deselect_All_Brushes,
+    WM_OT_Pick_Invert_Selected_Brushes,
+    WM_OT_Pick_Delete_Brush_Data,
+    WM_OT_Pick_Refresh_Brush_Data,
+    WM_OT_Pick_Change_Icon_Path,
+    WM_OT_Switch_Custom_Icon,
+    WM_OT_Switch_Fake_User,
+    WM_OT_Pick_Save_Brushes,
+    WM_MT_Edit_from_Category_Ops,
 )
 
 preview_brushes_coll = {}
