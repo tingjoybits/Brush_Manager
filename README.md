@@ -34,6 +34,8 @@ Support Blender version: **2.83+**
 
 # Change Log
 
+**Brush Manager 1.2.5**
+
 - New popup editor for the Library Categories. You can access it from the menu with *'Edit Brushes from Category'* operator. Editor window contains the brush list of the corresponding category and a several new operations, that helps you to edit some properties of the selected brushes.
 - Operator *'Refresh Brush Data'* for the category editor, that can refresh the selected brushes data and return to the settings of their library files.
 - Operator *'Save Brushes'* for the category editor, that helps you to save a specific list of the selected brushes from the active category. Easy way to pick and save some brushes from various appended libraries that could be listed in the Current File category. That way you don't have to mess around with the favorites list.
