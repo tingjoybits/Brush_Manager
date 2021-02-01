@@ -470,7 +470,7 @@ def get_append_brushes(directory, b_files, default_brushes=False):
         if brush in def_brushes and not default_brushes:
             continue
         try:
-            if not check_brush_type(bpy.data.brushes[brush]):
+            if not check_brush_type(bpy.data.brushes[brush], MODE):
                 continue
         except KeyError:
                 continue
@@ -482,7 +482,7 @@ def get_append_brushes(directory, b_files, default_brushes=False):
 
 def get_copy_number(name):
     name_digits = []
-    brushes = get_current_file_brushes()
+    brushes = get_current_file_brushes(MODE)
     check_name = '.'.join(name.split('.')[0:-1])
     if check_name == '':
         check_name = name
@@ -1682,7 +1682,7 @@ class WM_OT_Delete_Zero_User_Brushes(Operator):
     def execute(self, context):
         remove_brushes = []
         for brush in bpy.data.brushes:
-            if not check_brush_type(brush):
+            if not check_brush_type(brush, MODE):
                 continue
             if brush.users > 0:
                 continue
@@ -1771,7 +1771,7 @@ class WM_OT_Save_Favorites(Operator):
             if b in def_brushes and not self.default_brushes:
                 continue
             try:
-                if check_brush_type(bpy.data.brushes[b]):
+                if check_brush_type(bpy.data.brushes[b], MODE):
                     brushes_data.append(bpy.data.brushes[b])
             except KeyError:
                 brushes_failed = brushes_failed + ' ' + '\"' + b + '\",'
@@ -3658,7 +3658,7 @@ class WM_OT_Pick_Save_Brushes(Operator):
         brushes_failed = ''
         for b in self.brushes:
             try:
-                if check_brush_type(bpy.data.brushes[b]):
+                if check_brush_type(bpy.data.brushes[b], MODE):
                     brushes_data.append(bpy.data.brushes[b])
             except KeyError:
                 brushes_failed = brushes_failed + ' ' + '\"' + b + '\",'
