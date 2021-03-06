@@ -1479,7 +1479,7 @@ def get_pref_default_brush_props(list_type='', mode=''):
 
     props_values = []
     for pr in props_list:
-        b_name = prefs.__annotations__.get(pr)[1].get('name')
+        b_name = prefs.bl_rna.properties[pr].name
         if list_type == 'tools' or list_type == 'other_tools':
             exec("props_values.append((b_name, prefs." + pr + "))")
         else:
