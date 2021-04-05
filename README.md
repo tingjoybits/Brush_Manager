@@ -7,7 +7,7 @@ Support Blender version: **2.83+**
 
 # Installation
 
-- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.2.5/Brush_Manager125c.zip)<- file
+- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.2.7/Brush_Manager127.zip)<- file
 - Open Blender and select Edit->Preferences
 - Click Add-ons category and then 'Install...' button
 - Select the downloaded file
@@ -33,6 +33,27 @@ Support Blender version: **2.83+**
 ![Themes](images/brush_manager_themes.png)
 
 # Change Log
+
+**Brush Manager 1.2.7**
+
+- New operator *'Save Favorites to Category'* added to the menu, that saves the favorites list of brushes to the new or existing library category. Shows a small popup window where you can type or select a name of the Category in which the list of brushes is gonna be saved (**Only Latin characters are supported**).
+- Added to *'Edit Brushes from Category'* popup editor menu *'Save Brushes to Category'* operation, that saves the selected list of brushes, similar to the operation that has been described above.
+- New operator *'Replace the Favorites by the Category List'*, that replaces the Favorites by the current preview brushes of the category list. The quick and easy way to clear and add the category list to the Favorites in one button.
+- New preference property *'Display Default Brushes in Categories'*, that shows and use the default brushes in the selected category if contains them. Previously, or when this property being turned off, if the library file would contain any of the default brushes, they will be filtered out of the list.
+- New preference property *'Use Preferences Editor for Settings'*, that opens the Preferences Editor for add-on settings instead of popup window. The main difference in functionality between the two is, that in the usual Preferences window is possible to reset properties to their default values.
+- New preference property *"Move \'Replace Favorites by Category\' into Menu"*, that moves the *'Replace Favorites by Category'* operator from UI panel into own menu.
+
+This update allows you to use the categories as a quick presets. Now you can quickly save brushes to the new category and then load with the help of the added operators.
+Do not forget to check *'Display Default Brushes in Categories'* if you are planing to use the default brushes in your preset libraries.
+
+![](images/new_common_prefs127.png)
+![](images/new_pref_ui_prop127.png)
+![](images/ui_layout127.png)
+![](images/menu_operator127.png)
+![](images/edit_category_menu127.png)
+![](images/save_favs_to_category127.png)
+![](images/add_to_cat_clear_favs127.png)
+
 
 **Brush Manager 1.2.5**
 
