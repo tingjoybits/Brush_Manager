@@ -4273,7 +4273,10 @@ class PREF_OT_Load_Settings(Operator):
         pref_data = json.load(f)
         for pr in pref_data:
             value = pref_data.get(pr)
-            exec("if hasattr(prefs, pr): prefs." + pr + " = value")
+            try:
+                exec("if hasattr(prefs, pr): prefs." + pr + " = value")
+            except TypeError:
+                continue
             if pr == 'keymaps_state':
                 load_keymaps = pref_data.get(pr)
                 load_saved_keymaps(context, load_keymaps)
