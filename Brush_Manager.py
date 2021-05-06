@@ -144,6 +144,8 @@ def evaluate_brush_tools(brushes, mode=''):
 
 
 def update_pref_def_brush(self, context, mode=''):
+    if context.mode not in self.modes.in_modes:
+        return None
     if not mode:
         mode = self.pref_tabs
     # props = context.window_manager.brush_manager_props
