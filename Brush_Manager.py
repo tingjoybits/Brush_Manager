@@ -1818,7 +1818,7 @@ class WM_OT_Save_Favorites(Operator):
 
 
 class WM_OT_Save_Brushes_to_Category(Operator):
-    bl_label = 'Save Favorites to Category'
+    bl_label = 'Save Brushes to Category'
     bl_idname = 'bm.save_brushes_to_category'
     bl_description = "Save the list of brushes to the new or existing library category"
 
@@ -2196,13 +2196,13 @@ class WM_MT_BrushManager_Ops(Menu):
             if prefs.hide_header:
                 layout.prop(props, "popup_tools_switch", text='Show Tools')
                 layout.prop(props, "show_brush_tools")
-                layout.operator("bm.settings_popup", icon='PREFERENCES')
+                layout.operator("bm.show_settings", icon='PREFERENCES')
                 layout.separator()
         else:
             if MODE == 'SCULPT' and not prefs.sculpt_hide_preview:
                 layout.operator("bm.add_to_favorites_popup", icon='PRESET_NEW')
             layout.separator()
-            layout.operator("bm.settings_popup", icon='PREFERENCES')
+            layout.operator("bm.show_settings", icon='PREFERENCES')
             layout.separator()
         layout.operator("bm.set_icon_to_active_brush", icon='FILE_IMAGE')
         layout.separator()
@@ -2211,7 +2211,7 @@ class WM_MT_BrushManager_Ops(Menu):
         modes = BM_Modes()
         if modes.use_startup_favorites():
             layout.operator("bm.load_startup_favorites", icon='FILE_BLEND')
-        layout.operator("bm.save_brushes_to_category", icon='NEWFOLDER').pick_list = False
+        layout.operator("bm.save_brushes_to_category", text='Save Favorites to Category', icon='NEWFOLDER').pick_list = False
         layout.operator("bm.save_active_brush", text='Save the Active Brush to a File', icon='FILE')
         layout.operator("bm.save_favorites", text='Save the Favorites to a File', icon='EXPORT')
         layout.operator("bm.append_from_a_file_to_favorites", text='Append from a File to the Favorites', icon='IMPORT')
@@ -3443,10 +3443,7 @@ class POPUP_OT_Tools_and_Brushes(Operator):
 
         row.prop(props, "popup_tools_switch", text='', icon='TOOL_SETTINGS')
         row.prop(props, "show_brush_tools", text='', icon='BRUSHES_ALL')
-        if prefs.use_pref_editor_settings:
-            row.operator("bm.show_pref_settings", text='', icon='PREFERENCES')
-        else:
-            row.operator("bm.settings_popup", text='', icon='PREFERENCES')
+        row.operator("bm.show_settings", text='', icon='PREFERENCES')
         row = row.row()  # align=True
         row.label(text=' ')
         row.menu("VIEW3D_MT_Sculpt_brush_manager_menu", icon='DOWNARROW_HLT', text="")
@@ -4158,12 +4155,35 @@ class POPUP_OT_Add_to_Favorites_Popup(Operator):
         draw_remove_fav_brushes(col, context)
 
 
-class POPUP_OT_Settings_Popup(Operator):
+class POPUP_OT_Show_Settings(Operator):
     bl_label = 'Settings'
-    bl_idname = 'bm.settings_popup'
+    bl_idname = 'bm.show_settings'
     bl_description = "Show preference settings of the Brush Manager add-on"
 
     def execute(self, context):
+        return {'FINISHED'}
+
+    def show_preferences(self, context):
+        import addon_utils
+
+        addons = [
+            (mod, addon_utils.module_bl_info(mod))
+            for mod in addon_utils.modules(refresh=False)
+        ]
+
+        for mod, info in addons:
+            if info['name'] == "Brush Manager":
+                info['show_expanded'] = True
+
+        bpy.context.preferences.active_section = 'ADDONS'
+        bpy.data.window_managers["WinMan"].addon_filter = 'Interface'
+        bpy.data.window_managers["WinMan"].addon_search = "Brush Manager"
+
+        prefs = context.preferences.addons[Addon_Name].preferences
+        if context.mode in BM_Modes.in_modes:
+            prefs.pref_tabs = context.mode
+
+        bpy.ops.screen.userpref_show()
         return {'FINISHED'}
 
     def draw(self, context):
@@ -4188,39 +4208,12 @@ class POPUP_OT_Settings_Popup(Operator):
 
     def invoke(self, context, event):
         prefs = context.preferences.addons[Addon_Name].preferences
-        if context.mode in BM_Modes.in_modes:
+        if prefs.use_pref_editor_settings:
+            return self.show_preferences(context)
+        elif context.mode in BM_Modes.in_modes:
             prefs.pref_tabs = context.mode
         return context.window_manager.invoke_props_dialog(self, width=520)
         # return context.window_manager.invoke_popup(self, width=500)
-
-
-class WM_OT_Show_Preferences(Operator):
-    bl_label = 'Show Preference Settings'
-    bl_idname = 'bm.show_pref_settings'
-    bl_description = "Show add-on preference settings"
-
-    def execute(self, context):
-        import addon_utils
-
-        addons = [
-            (mod, addon_utils.module_bl_info(mod))
-            for mod in addon_utils.modules(refresh=False)
-        ]
-
-        for mod, info in addons:
-            if info['name'] == "Brush Manager":
-                info['show_expanded'] = True
-
-        bpy.context.preferences.active_section = 'ADDONS'
-        bpy.data.window_managers["WinMan"].addon_filter = 'Interface'
-        bpy.data.window_managers["WinMan"].addon_search = "Brush Manager"
-
-        prefs = context.preferences.addons[Addon_Name].preferences
-        if context.mode in BM_Modes.in_modes:
-            prefs.pref_tabs = context.mode
-
-        bpy.ops.screen.userpref_show()
-        return {'FINISHED'}
 
 
 class PREF_OT_Save_Settings(Operator):
@@ -4320,8 +4313,7 @@ classes = (
     POPUP_OT_Tools_and_Brushes,
     POPUP_OT_Edit_Favorites_Popup,
     POPUP_OT_Add_to_Favorites_Popup,
-    POPUP_OT_Settings_Popup,
-    WM_OT_Show_Preferences,
+    POPUP_OT_Show_Settings,
     Brushes_Data_Collection,
     Category_List_Collection,
     BM_Favorite_list_settings,
