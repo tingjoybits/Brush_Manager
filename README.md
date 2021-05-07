@@ -1,19 +1,19 @@
 **Brushes Manager** is an add-on for Blender that helps you to create custom brushes, store them in a file and organize the library of various categories of brushes.
 It also has themes for brushes preview and this add-on makes easy to apply a new themed icon for your newly created brush and for existing brushes as well.
 
-![Thumb](images/brush_manager_thumbnail.png)
-
 Support Blender version: **2.83+**
 
 # Installation
 
-- [**Download**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.2.7/Brush_Manager127a.zip)<- file
+- [**DOWNLOAD LATEST RELEASE**](https://github.com/tingjoybits/Brush_Manager/releases/download/1.2.7/Brush_Manager127a.zip)<- file
 - Open Blender and select Edit->Preferences
 - Click Add-ons category and then 'Install...' button
 - Select the downloaded file
 - Check the 'Brush Manager' option in the add-ons dialog
 
 [![Installation](images/brush_manager_installation640x360.png)](https://drive.google.com/file/d/1eJ54uitBehOi_Xy4-lGUeZvVKPQ0EdO5/preview)
+
+![Thumb](images/brush_manager_thumbnail.png)
 
 # Overview
 
@@ -194,3 +194,7 @@ Here you can change the hotkey if it has already using by another add-on:
 New Preference setting:
 
 ![Popup_setting](images/bm_popup_setting.png)
+
+**Support the Developer:**
+
+You can support me here https://gum.co/zLBPz Thanks!
