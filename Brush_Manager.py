@@ -937,7 +937,7 @@ def create_enum_list(context, brushes, b_preview_coll, update_icon=False):
 
 
 def reset_all_default_brushes(context):
-    if contex.mode != 'SCULPT':
+    if context.mode != 'SCULPT':
         return None
     props = context.window_manager.brush_manager_props
     def_brushes = get_sorted_default_brushes()
