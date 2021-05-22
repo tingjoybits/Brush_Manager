@@ -4699,6 +4699,7 @@ def unregister():
     preview_brushes_coll.clear()
 
     previews.remove(t3dn_brush_coll)
+    previews.remove(t3dn_brush_fav_coll)
 
     try:
         bpy.app.handlers.load_post.remove(brush_manager_on_file_load)
