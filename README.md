@@ -5,7 +5,7 @@ Support Blender version: **2.83+**
 
 # Installation
 
-- [**DOWNLOAD LATEST RELEASE**](https://github.com/tingjoybits/Brush_Manager/releases/latest/download/Brush_Manager127b.zip)<- file
+- [**DOWNLOAD LATEST RELEASE**](https://github.com/tingjoybits/Brush_Manager/releases/latest/download/Brush_Manager129.zip)<- file
 - Open Blender and select Edit->Preferences
 - Click Add-ons category and then 'Install...' button
 - Select the downloaded archive file from download link (The archive downloaded from 'Code' button won't work, please use the releases)
@@ -33,6 +33,15 @@ Support Blender version: **2.83+**
 ![Themes](images/brush_manager_themes.png)
 
 # Change Log
+
+**Brush Manager 1.2.9**
+
+- Integrated 3DN BIP or 3D Ninjas Blender Image Preview library, which allows real fast preview image loads in Blender. Now brush icons will load instantly from the very start if 3DN BIP library is turned on in the Settings. Installation of python module 'Pillow' is required. More info about library at the developers page https://github.com/3dninjas/3dn-bip/
+- Now properly saves favorites settings for every mode if *'Save Favorites List to the Current File'* preference setting is being used.
+- Fixed error while resetting default brushes.
+- Other various small fixes.
+
+![](images/t3dn_pip_preference129.png)
 
 **Brush Manager 1.2.7**
 
