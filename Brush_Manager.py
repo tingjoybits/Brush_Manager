@@ -21,7 +21,6 @@ import os
 import sys
 import subprocess
 import json
-import bpy.utils.previews
 from bpy.app.handlers import persistent
 from bpy.types import Operator, Menu, Panel, PropertyGroup, AddonPreferences, Scene, WindowManager, BlendData
 from bpy.props import *
@@ -608,30 +607,19 @@ def update_category_first_preview_item(self, context):
 
 def update_brush_list(self, context):
     global _directory
-    prefs = context.preferences.addons[Addon_Name].preferences
     create_default_smear_tools()
     set_first_preview_item(context, [])
-    if prefs.use_3dn_bip_previews:
-        _directory = None
-    else:
-        b_preview_coll = preview_brushes_coll["main"]
-        b_preview_coll.my_previews_dir = ""
+    _directory = None
 
 
 def update_fav_list(self, context):
     global _fav_list
-    prefs = context.preferences.addons[Addon_Name].preferences
     fav_brushes = get_favorite_brushes()
     set_first_preview_item(context, fav_brushes, wm_enum_prop='fav')
-    if prefs.use_3dn_bip_previews:
-        _fav_list = None
-    else:
-        b_preview_coll = preview_brushes_coll["favorites"]
-        b_preview_coll.my_previews_dir = ""
+    _fav_list = None
 
 
 def lib_category_folders(self, context):
-    prefs = context.preferences.addons[Addon_Name].preferences
     modes = BM_Modes()
     lib_path = modes.library_path()
     default_list = ['Default', 'Current File']
@@ -746,15 +734,6 @@ def get_brushes_from_preview_enums(enum_items, list_type='brushes'):
 
 
 def get_main_list_brushes(context, list_type='brushes'):
-    prefs = bpy.context.preferences.addons[Addon_Name].preferences
-    b_preview_coll = get_preview_brushes_collection()
-    if not prefs.use_3dn_bip_previews:
-        directory = get_library_directory(context)
-        b_preview_coll.my_previews_dir = directory
-        main_preview_enums = b_preview_coll.my_previews
-        if list_type == 'full':
-            return main_preview_enums
-        return get_brushes_from_preview_enums(main_preview_enums, list_type)
     global _enum_items
     if list_type == 'icons':
         return [icon_id for name, n, e, icon_id, i in _enum_items]
@@ -762,11 +741,6 @@ def get_main_list_brushes(context, list_type='brushes'):
 
 
 def get_favorite_brushes(list_type='brushes'):
-    prefs = bpy.context.preferences.addons[Addon_Name].preferences
-    b_preview_coll = get_preview_brushes_collection(coll_type='favorites')
-    if not prefs.use_3dn_bip_previews:
-        preview_enums = b_preview_coll.my_previews
-        return get_brushes_from_preview_enums(preview_enums, list_type)
     global _enum_items_fav
     if list_type == 'icons':
         return [icon_id for name, n, e, icon_id, i in _enum_items_fav]
@@ -922,11 +896,7 @@ def create_thumbnail_icon(context, brush_name, b_preview_coll):
 
 
 def load_preview_icon(context, brush_name, filepath, b_preview_coll):
-    prefs = context.preferences.addons[Addon_Name].preferences
-    if prefs.use_3dn_bip_previews:
-        return b_preview_coll.load_safe(MODE + '_' + brush_name, filepath, 'IMAGE')
-    else:
-        return b_preview_coll.load(MODE + '_' + brush_name, filepath, 'IMAGE')
+    return b_preview_coll.load_safe(MODE + '_' + brush_name, filepath, 'IMAGE')
 
 
 def create_enum_list(context, brushes, b_preview_coll, update_icon=False):
@@ -1110,8 +1080,6 @@ def initialize_brush_manager_ui(props, b_preview_coll):
         bpy.app.handlers.save_pre.append(brush_manager_pre_save)
     if not handler_check(bpy.app.handlers.save_post, "brush_manager_post_save"):
         bpy.app.handlers.save_post.append(brush_manager_post_save)
-    if not handler_check(bpy.app.handlers.undo_pre, "brush_manager_pre_undo"):
-        bpy.app.handlers.undo_pre.append(brush_manager_pre_undo)
     if not handler_check(bpy.app.handlers.undo_post, "brush_manager_post_undo"):
         bpy.app.handlers.undo_post.append(brush_manager_post_undo)
 
@@ -1119,7 +1087,6 @@ def initialize_brush_manager_ui(props, b_preview_coll):
     props.brush_manager_init = True
     if bpy.data.scenes[0].name == 'Empty':
         props.manager_empty_init = True
-    b_preview_coll.my_previews_dir = ""
     global MODE
     if UI_MODE:
         MODE = 'PAINT_TEXTURE'
@@ -1152,37 +1119,22 @@ _fav_list = None
 
 
 def get_preview_brushes_collection(coll_type='main'):
-    prefs = bpy.context.preferences.addons[Addon_Name].preferences
     if coll_type == 'favorites':
-        if prefs.use_3dn_bip_previews:
-            return t3dn_brush_fav_coll
-        else:
-            preview_brushes_coll["favorites"].my_previews_dir == "favorites"
-            return preview_brushes_coll["favorites"]
-    if prefs.use_3dn_bip_previews:
-        return t3dn_brush_coll
+        return t3dn_brush_fav_coll
     else:
-        return preview_brushes_coll["main"]
+        return t3dn_brush_coll
 
 
 def create_preview_collection_list(context, brushes, b_preview_coll, coll_type='favorites'):
     global _enum_items, _enum_items_fav, _fav_list
-    prefs = context.preferences.addons[Addon_Name].preferences
     enum_items = create_enum_list(context, brushes, b_preview_coll)
     if coll_type == 'favorites':
         _fav_list = None
         _enum_items_fav = enum_items
-    if not prefs.use_3dn_bip_previews:
-        b_preview_coll.my_previews = enum_items
 
 
 def clear_preview_collection_list(b_preview_coll, coll_list='favorites'):
-    prefs = bpy.context.preferences.addons[Addon_Name].preferences
-    if not prefs.use_3dn_bip_previews:
-        if len(b_preview_coll.my_previews) > 0:
-            b_preview_coll.my_previews.clear()
-        b_preview_coll.my_previews = []
-    elif coll_list == 'favorites':
+    if coll_list == 'favorites':
         brushes = get_favorite_brushes()
         remove_fav_brush(None, bpy.context, brushes)
     elif coll_list == 'default':
@@ -1191,7 +1143,6 @@ def clear_preview_collection_list(b_preview_coll, coll_list='favorites'):
 
 def preview_brushes_in_folders(self, context):
     global _enum_items, _directory
-    prefs = context.preferences.addons[Addon_Name].preferences
     props = context.window_manager.brush_manager_props
     if context is None:
         return []
@@ -1202,14 +1153,9 @@ def preview_brushes_in_folders(self, context):
     selected_category_name = props.lib_categories
 
     directory = get_library_directory(context)
-    if not prefs.use_3dn_bip_previews:
-        is_same_list = directory == b_preview_coll.my_previews_dir
-    else:
-        is_same_list = directory == _directory
+    is_same_list = directory == _directory
 
-    if is_same_list and not prefs.use_3dn_bip_previews:
-        return b_preview_coll.my_previews
-    elif is_same_list and prefs.use_3dn_bip_previews:
+    if is_same_list:
         return _enum_items
     elif selected_category_name == 'Default':
         brushes = get_sorted_default_brushes(MODE)
@@ -1226,45 +1172,25 @@ def preview_brushes_in_folders(self, context):
     _enum_items.clear()
     _directory = directory
     _enum_items = create_enum_list(context, brushes, b_preview_coll)
-    if not prefs.use_3dn_bip_previews:
-        b_preview_coll.my_previews_dir = directory
-        b_preview_coll.my_previews = _enum_items
-        return b_preview_coll.my_previews
     return _enum_items
 
 
 def preview_brushes_in_favorites(self, context):
-    prefs = context.preferences.addons[Addon_Name].preferences
     global _enum_items_fav, _fav_list, UPDATE_ICONS
     if context is None:
         return []
 
     fav_list = "favorites"
     b_preview_coll = get_preview_brushes_collection(coll_type='favorites')
-    if not prefs.use_3dn_bip_previews:
-        if b_preview_coll.my_previews_dir == fav_list:
-            return b_preview_coll.my_previews
-    else:
-        if _fav_list == fav_list:
-            return _enum_items_fav
+    if _fav_list == fav_list:
+        return _enum_items_fav
 
     brushes = get_favorite_brushes()
     _enum_items_fav.clear()
     _fav_list = fav_list
     _enum_items_fav = create_enum_list(context, brushes, b_preview_coll)
-    if not prefs.use_3dn_bip_previews:
-        b_preview_coll.my_previews_dir = fav_list
-        b_preview_coll.my_previews = _enum_items_fav
-        UPDATE_ICONS = False
-        return b_preview_coll.my_previews
     UPDATE_ICONS = False
     return _enum_items_fav
-
-
-def update_use_3dn_bip_previews(self, context):
-    if not self.use_3dn_bip_previews:
-        b_preview_coll = get_preview_brushes_collection(coll_type='favorites')
-        b_preview_coll.my_previews = _enum_items_fav
 
 
 def SelectBrushError(self, context):
@@ -1554,27 +1480,18 @@ def update_icon_theme(self, context):
 
 
 def remove_fav_brush(self, context, remove_brushes):
-    prefs = bpy.context.preferences.addons[Addon_Name].preferences
-    b_preview_coll = get_preview_brushes_collection(coll_type='favorites')
     brushes = get_favorite_brushes()
     for b in remove_brushes:
         try:
-            if prefs.use_3dn_bip_previews:
-                _enum_items_fav.pop(brushes.index(b))
-                # b_preview_coll.pop(MODE + '_' + b)
+            _enum_items_fav.pop(brushes.index(b))
             brushes.remove(b)
         except ValueError:
-            # self.report({'ERROR'}, msg)
             continue
-    if not prefs.use_3dn_bip_previews:
-        create_preview_collection_list(context, brushes, b_preview_coll)
 
 
 def remove_def_brushes():
-    prefs = bpy.context.preferences.addons[Addon_Name].preferences
     b_preview_coll = get_preview_brushes_collection()
-    if prefs.use_3dn_bip_previews:
-        b_preview_coll.clear()
+    b_preview_coll.clear()
 
 
 def remove_active_brush_favorite(self, context, fav_type='preview'):
@@ -2503,7 +2420,6 @@ class BM_Side_Panel:
 def init_bm_panel(self):
     global MODE
     global UI_MODE
-    BM_Initialization()
     if bpy.context.mode != MODE and not UI_MODE:
         props = bpy.context.window_manager.brush_manager_props
         store_favorites_list(MODE, 'STORE')
@@ -2784,12 +2700,8 @@ def draw_preferences(self, context, layout):
     # layout = self.layout
     box = layout.box()
     row = box.row()
-    row.prop(self, "use_3dn_bip_previews")
-    sub_row = row.row()
-    sub_row.enabled = self.use_3dn_bip_previews
     text = 'Update Pillow' if support_pillow() else 'Install Pillow'
-    sub_row.operator("bm.t3dn_bip_install_pillow", text=text)
-    row = row.row()
+    row.operator("bm.t3dn_bip_install_pillow", text=text)
     row.prop(self, "t3dn_bip_and_pillow_info", text='', icon='QUESTION')
     if self.t3dn_bip_and_pillow_info:
         box = layout.box()
@@ -3031,15 +2943,6 @@ class BrushManager_Preferences(AddonPreferences):
     del prop
     del description
     #////////////////////////
-    use_3dn_bip_previews: BoolProperty(
-        name="3DN BIP library for fast previews",
-        default=False,
-        description=(
-            "Use 3DN BIP external library for faster loading icon previews. Installation of Python module 'Pillow' is required. "
-            "Internet connection is needed in order to install the module for Blender"
-        ),
-        update=update_use_3dn_bip_previews
-    )
     t3dn_bip_and_pillow_info: BoolProperty(
         name="Pillow Info",
         default=False,
@@ -3280,19 +3183,6 @@ def set_brushes_data_collection_items():
         item.name = name
 
 
-def brush_manager_pre_undo(scene):
-    try:
-        b_preview_coll = preview_brushes_coll["main"]
-    except KeyError:
-        return None
-    b_preview_undo = preview_brushes_coll["undo"]
-    b_preview_undo.my_previews = b_preview_coll.my_previews
-
-    b_preview_fav = preview_brushes_coll["favorites"]
-    b_preview_undof = preview_brushes_coll["undofav"]
-    b_preview_undof.my_previews = b_preview_fav.my_previews
-
-
 def brush_manager_post_undo(scene):
     try:
         props = bpy.context.window_manager.brush_manager_props
@@ -3307,16 +3197,6 @@ def brush_manager_post_undo(scene):
         bpy.ops.sculpt.sculptmode_toggle()
         set_toggle_default_icons(bpy.context)
 
-    b_preview_coll = preview_brushes_coll["main"]
-    b_preview_undo = preview_brushes_coll["undo"]
-    b_preview_coll.my_previews = b_preview_undo.my_previews
-    b_preview_coll.my_previews_dir = ""
-
-    b_preview_fav = preview_brushes_coll["favorites"]
-    b_preview_undof = preview_brushes_coll["undofav"]
-    b_preview_fav.my_previews = b_preview_undof.my_previews
-    b_fav = get_favorite_brushes()
-    b_preview_fav.my_previews_dir = ""
     global _directory, _fav_list
     _directory = None
     _fav_list = None
@@ -3392,16 +3272,6 @@ def set_category_collection_items():
     for name in folders:
         item = category_list.add()
         item.name = name
-
-
-def BM_Initialization():
-    props = bpy.context.window_manager.brush_manager_props
-    b_preview_coll = preview_brushes_coll["main"]
-    if bpy.data.scenes[0].name == 'Empty' and props.manager_empty_init is True:
-        return None
-    if bpy.data.scenes[0].name != 'Empty' and props.brush_manager_init is True:
-        return None
-    initialize_brush_manager_ui(props, b_preview_coll)
 
 
 def load_favorites_in_mode():
@@ -3587,7 +3457,6 @@ class POPUP_OT_Tools_and_Brushes(Operator):
             prefs = context.preferences.addons[Addon_Name].preferences
             props = context.window_manager.brush_manager_props
             set_ui_mode(context, 'popup')
-            BM_Initialization()
             global MODE
             global CURRENT_MODE_CATEGORY
             if context.mode != MODE or UI_MODE:
@@ -4564,7 +4433,6 @@ classes = (
     PREF_OT_Uninstall_pillow,
 )
 
-preview_brushes_coll = {}
 addon_keymaps = []
 supported_keymaps = [
     'Sculpt',
@@ -4633,23 +4501,6 @@ t3dn_brush_fav_coll = None
 
 
 def register():
-    brushes_coll = bpy.utils.previews.new()
-    brushes_coll.my_previews_dir = ""
-    brushes_coll.my_previews = ()
-    preview_brushes_coll["main"] = brushes_coll
-    brush_favorites = bpy.utils.previews.new()
-    brush_favorites.my_previews_dir = "favorites"
-    brush_favorites.my_previews = ()
-    preview_brushes_coll["favorites"] = brush_favorites
-    brush_undo = bpy.utils.previews.new()
-    brush_undo.my_previews_dir = "undo"
-    brush_undo.my_previews = ()
-    preview_brushes_coll["undo"] = brush_undo
-    brush_undof = bpy.utils.previews.new()
-    brush_undof.my_previews_dir = "undo"
-    brush_undof.my_previews = ()
-    preview_brushes_coll["undofav"] = brush_undof
-
     global t3dn_brush_coll, t3dn_brush_fav_coll
     t3dn_brush_coll = previews.new()
     t3dn_brush_fav_coll = previews.new()
@@ -4679,7 +4530,6 @@ def register():
     bpy.app.handlers.save_pre.append(brush_manager_pre_save)
     bpy.app.handlers.save_post.append(brush_manager_post_save)
     bpy.app.handlers.depsgraph_update_pre.append(brush_manager_pre_dp_update)
-    bpy.app.handlers.undo_pre.append(brush_manager_pre_undo)
     bpy.app.handlers.undo_post.append(brush_manager_post_undo)
     set_brushes_data_collection_items()
     update_panel(None, bpy.context)
@@ -4694,10 +4544,6 @@ def unregister():
     for cls in classes:
         unregister_class(cls)
 
-    for bcoll in preview_brushes_coll.values():
-        bpy.utils.previews.remove(bcoll)
-    preview_brushes_coll.clear()
-
     previews.remove(t3dn_brush_coll)
     previews.remove(t3dn_brush_fav_coll)
 
@@ -4709,7 +4555,6 @@ def unregister():
         bpy.app.handlers.depsgraph_update_pre.remove(brush_manager_pre_dp_update)
         bpy.app.handlers.save_pre.remove(brush_manager_pre_save)
         bpy.app.handlers.save_post.remove(brush_manager_post_save)
-        bpy.app.handlers.undo_pre.remove(brush_manager_pre_undo)
         bpy.app.handlers.undo_post.remove(brush_manager_post_undo)
     except ValueError:
         pass
