@@ -27,7 +27,7 @@ bl_info = {
     "blender": (2, 83, 0),
     "version": (1, 2, 9),
     "location": "Properties Editor > Active Tool tab > Brushes Panel",
-    "wiki_url": "https://github.com/tingjoybits/Brush_Manager",
+    "doc_url": "https://github.com/tingjoybits/Brush_Manager",
     "category": "Interface"
 }
 
