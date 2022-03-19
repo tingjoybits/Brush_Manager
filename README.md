@@ -3,6 +3,8 @@ It also has themes for brushes preview and this add-on makes easy to apply a new
 
 Support Blender version: **2.83+**
 
+[![Donate](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/donate/?hosted_button_id=C77W5ZVC6R562)
+
 # Installation
 
 - [**DOWNLOAD LATEST RELEASE**](https://github.com/tingjoybits/Brush_Manager/releases/latest/download/Brush_Manager129.zip)<- file
@@ -31,6 +33,15 @@ Support Blender version: **2.83+**
 
 **Icon Themes:**
 ![Themes](images/brush_manager_themes.png)
+
+# Support the Developer
+
+You can support me here also, Thanks!
+
+https://patreon.com/tingjoybits
+
+https://tingjoybits.gumroad.com/
+
 
 # Change Log
 
@@ -203,7 +214,3 @@ Here you can change the hotkey if it has already using by another add-on:
 New Preference setting:
 
 ![Popup_setting](images/bm_popup_setting.png)
-
-**Support the Developer:**
-
-You can support me here https://gum.co/zLBPz Thanks!
