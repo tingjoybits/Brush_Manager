@@ -8,6 +8,7 @@ from pathlib import Path
 from zlib import decompress
 from array import array
 from .formats import test_formats, BIP_FORMATS, PIL_FORMATS, MAGIC_LENGTH
+from . import settings
 
 USER_SITE = site.getusersitepackages()
 
@@ -69,24 +70,49 @@ def install_pillow() -> bool:
 
 def can_load(filepath: str) -> bool:
     '''Return whether an image can be loaded.'''
-    # Read magic for format detection.
-    with open(filepath, 'rb') as file:
-        magic = file.read(MAGIC_LENGTH)
 
-    # We support BIP (currently only BIP2).
-    for spec in BIP_FORMATS.values():
-        if magic.startswith(spec.magic):
-            return True
+    # Perform a magic check if configured.
+    if settings.USE_MAGIC:
+        with open(filepath, 'rb') as file:
+            magic = file.read(MAGIC_LENGTH)
 
-    # If Pillow is not installed, we don't support other formats.
-    if not support_pillow():
-        return False
+        # We support BIP (currently only BIP2).
+        for spec in BIP_FORMATS.values():
+            if magic.startswith(spec.magic):
+                return True
 
-    # If Pillow is installed, find out if we support this format.
-    for spec in PIL_FORMATS.values():
-        if magic.startswith(spec.magic):
-            return spec.supported
+        # If Pillow is not installed, we don't support other formats.
+        if not support_pillow():
+            return False
 
+        # If Pillow is installed, find out if we support this format.
+        for spec in PIL_FORMATS.values():
+            if magic.startswith(spec.magic):
+                return spec.supported
+
+    # Perform a file extension check otherwise.
+    else:
+        ext = Path(filepath).suffix.lower()
+
+        # We can't check the extention if the file doesn't have one.
+        if not ext:
+            return False
+
+        # We support BIP (currently only BIP2).
+        for spec in BIP_FORMATS.values():
+            if ext in spec.exts:
+                return True
+
+        # If Pillow is not installed, we don't support other formats.
+        if not support_pillow():
+            return False
+
+        # If Pillow is installed, find out if we support this format.
+        for spec in PIL_FORMATS.values():
+            if ext in spec.exts:
+                return spec.supported
+
+    # Not supported.
     return False
 
 

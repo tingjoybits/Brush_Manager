@@ -25,7 +25,7 @@ bl_info = {
     "description": "Manage and organize of the brushes library",
     "author": "TingJoyBits",
     "blender": (2, 83, 0),
-    "version": (1, 2, 9),
+    "version": (1, 3, 0),
     "location": "Properties Editor > Active Tool tab > Brushes Panel",
     "doc_url": "https://github.com/tingjoybits/Brush_Manager",
     "category": "Interface"

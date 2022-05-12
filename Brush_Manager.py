@@ -31,10 +31,8 @@ from .t3dn_bip import previews
 from .t3dn_bip.ops import InstallPillow
 from .t3dn_bip.utils import support_pillow
 
-try:
-    Addon_Name = __name__.split('.')[1]
-except IndexError:
-    Addon_Name = __name__
+
+Addon_Name = __package__
 
 
 def prefs():
@@ -58,6 +56,9 @@ BRUSHES_SCULPT_NAMES = [
     'Pose', 'Rotate', 'Scrape/Peaks', 'SculptDraw', 'Simplify',
     'Slide Relax', 'Smooth', 'Snake Hook', 'Thumb'
 ]
+if bpy.app.version >= (3, 2, 0):
+    BRUSHES_SCULPT_NAMES += ['Paint', 'Smear Sculpt']
+
 BRUSHES_IPAINT_NAMES = ['Clone', 'Fill', 'Mask', 'Smear', 'Soften', 'TexDraw']
 
 BRUSHES_GPAINT_NAMES = [
@@ -116,6 +117,9 @@ def evaluate_brush_tools(brushes, mode=''):
         if mode == 'SCULPT':
             if t_label == 'Draw':
                 brush_tool_names.append((t_label, 'SculptDraw'))
+                continue
+            if t_label == 'Smear':
+                brush_tool_names.append((t_label, 'Smear Sculpt'))
                 continue
             for brush in BRUSHES_SCULPT_NAMES:
                 if brush.split('/')[0] == t_label:
@@ -607,6 +611,8 @@ def update_category_first_preview_item(self, context):
 
 
 def update_brush_list(self, context):
+    if context.mode not in BM_Modes.in_modes:
+        return None
     global _directory
     prefs = context.preferences.addons[Addon_Name].preferences
     create_default_smear_tools()
@@ -619,6 +625,8 @@ def update_brush_list(self, context):
 
 
 def update_fav_list(self, context):
+    if context.mode not in BM_Modes.in_modes:
+        return None
     global _fav_list
     prefs = context.preferences.addons[Addon_Name].preferences
     fav_brushes = get_favorite_brushes()
@@ -723,8 +731,10 @@ def get_current_file_brushes(mode=''):
             try:
                 if not check_brush_type(brush, mode):
                     continue
-                if brush.name == 'Paint' and not check_vertex_paint_brushes():
-                    continue
+                if brush.name == 'Paint':
+                    if bpy.app.version < (3, 2, 0) and\
+                            not check_vertex_paint_brushes():
+                        continue
                 brushes.append(brush.name)
             except AttributeError:
                 continue
@@ -1025,7 +1035,11 @@ def create_default_sculpt_tools():
 
 def create_default_smear_tools():
     global IS_INIT_SMEAR
-    if bpy.context.mode != 'PAINT_WEIGHT' and bpy.context.mode != 'PAINT_VERTEX':
+    if bpy.context.mode != 'PAINT_WEIGHT' and\
+            bpy.context.mode != 'PAINT_VERTEX' and\
+            bpy.context.mode != 'SCULPT':
+        return None
+    if bpy.context.mode == 'SCULPT' and bpy.app.version < (3, 2, 0):
         return None
     if IS_INIT_SMEAR.get(bpy.context.mode):
         return None

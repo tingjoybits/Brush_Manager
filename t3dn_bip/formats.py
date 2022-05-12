@@ -5,14 +5,16 @@ from base64 import b64decode
 class _BIPFormat:
     '''BIP format info.'''
 
-    def __init__(self, magic: bytes):
+    def __init__(self, exts: list, magic: bytes):
+        self.exts = exts
         self.magic = magic
 
 
 class _PILFormat:
     '''PIL format info.'''
 
-    def __init__(self, magic: bytes, tests: list):
+    def __init__(self, exts: list, magic: bytes, tests: list):
+        self.exts = exts
         self.magic = magic
         self.tests = tests
         self.supported = False
@@ -27,12 +29,25 @@ _jpg_tests = [
 ]
 
 BIP_FORMATS = {
-    'BIP2': _BIPFormat(magic=b'BIP2'),
+    'BIP2': _BIPFormat(
+        exts=['.bip', '.bip2'],
+        magic=b'BIP2',
+    ),
 }
 
 PIL_FORMATS = {
-    'PNG': _PILFormat(magic=b'\x89\x50\x4e\x47', tests=_png_tests),
-    'JPG': _PILFormat(magic=b'\xff\xd8', tests=_jpg_tests),
+    'PNG':
+        _PILFormat(
+            exts=['.png'],
+            magic=b'\x89\x50\x4e\x47',
+            tests=_png_tests,
+        ),
+    'JPG':
+        _PILFormat(
+            exts=['.jpg', '.jpeg', '.jpe', '.jif', '.jfif'],
+            magic=b'\xff\xd8',
+            tests=_jpg_tests,
+        ),
 }
 
 MAGIC_LENGTH = max(

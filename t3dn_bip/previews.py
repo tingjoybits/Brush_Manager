@@ -1,17 +1,12 @@
 import bpy
 import bpy.utils.previews
 from bpy.types import ImagePreview
-from multiprocessing.dummy import Pool
-from multiprocessing import cpu_count
 from threading import Event
-from queue import Queue
-from traceback import print_exc
-from time import time
 from typing import ItemsView, Iterator, KeysView, ValuesView
-from .utils import support_pillow, can_load, load_file, tag_redraw
+from .utils import support_pillow, can_load, load_file
 from .formats import unsupported_formats
-
-WARNINGS = True
+from .threads import load_async
+from . import settings
 
 
 class ImagePreviewCollection:
@@ -19,7 +14,7 @@ class ImagePreviewCollection:
 
     def __init__(self, max_size: tuple = (128, 128), lazy_load: bool = True):
         '''Create collection and start internal timer.'''
-        if WARNINGS:
+        if settings.WARNINGS:
             if not support_pillow():
                 print('Pillow is not installed, therefore:')
                 print('- BIP images load without scaling.')
@@ -47,12 +42,7 @@ class ImagePreviewCollection:
         self._lazy_load = lazy_load
 
         if self._lazy_load:
-            self._pool = Pool(processes=cpu_count())
-            self._event = None
-            self._queue = Queue()
-
-            if not bpy.app.timers.is_registered(self._timer):
-                bpy.app.timers.register(self._timer, persistent=True)
+            self._abort_signal = None
 
     def __len__(self) -> int:
         '''Return the amount of previews in the collection.'''
@@ -123,10 +113,12 @@ class ImagePreviewCollection:
 
         preview = self.new(name)
 
-        self._pool.apply_async(
-            func=self._load_async,
-            args=(name, filepath, self._get_event()),
-            error_callback=print,
+        load_async(
+            self._collection,
+            name,
+            filepath,
+            self._max_size,
+            self._get_abort_signal(),
         )
 
         return preview
@@ -158,83 +150,32 @@ class ImagePreviewCollection:
 
         return preview
 
-    def _load_async(self, name: str, filepath: str, event: Event):
-        '''Load image contents from file and queue preview load.'''
-        if not event.is_set():
-            data = load_file(filepath, self._max_size)
-
-        if not event.is_set():
-            self._queue.put((name, data, event))
-
-    def _timer(self):
-        '''Load queued image contents into previews.'''
-        now = time()
-        redraw = False
-        delay = 0.1
-
-        while time() - now < 0.1:
-            try:
-                args = self._queue.get(block=False)
-            except:
-                break
-
-            try:
-                self._load_queued(*args)
-            except:
-                print_exc()
-            else:
-                redraw = True
-
-        else:
-            delay = 0.0
-
-        if redraw:
-            tag_redraw()
-
-        return delay
-
-    def _load_queued(self, name: str, data: dict, event: Event):
-        '''Load queued image contents into preview.'''
-        if not event.is_set():
-            if name in self:
-                preview = self[name]
-                preview.icon_size = data['icon_size']
-                preview.icon_pixels = data['icon_pixels']
-                preview.image_size = data['image_size']
-                preview.image_pixels = data['image_pixels']
-
     def clear(self):
         '''Clear all previews.'''
         if self._lazy_load:
-            self._set_event()
-
-            with self._queue.mutex:
-                self._queue.queue.clear()
+            self._set_abort_signal()
 
         self._collection.clear()
 
     def close(self):
         '''Close the collection and clear all previews.'''
         if self._lazy_load:
-            self._set_event()
-
-            if bpy.app.timers.is_registered(self._timer):
-                bpy.app.timers.unregister(self._timer)
+            self._set_abort_signal()
 
         self._collection.close()
 
-    def _get_event(self) -> Event:
-        '''Get the clear event, make one if necesssary.'''
-        if self._event is None:
-            self._event = Event()
+    def _get_abort_signal(self) -> Event:
+        '''Get the abort signal, make one if necesssary.'''
+        if self._abort_signal is None:
+            self._abort_signal = Event()
 
-        return self._event
+        return self._abort_signal
 
-    def _set_event(self):
-        '''Set the clear event, then remove the reference.'''
-        if self._event is not None:
-            self._event.set()
-            self._event = None
+    def _set_abort_signal(self):
+        '''Set the abort signal, then remove the reference.'''
+        if self._abort_signal is not None:
+            self._abort_signal.set()
+            self._abort_signal = None
 
 
 def new(

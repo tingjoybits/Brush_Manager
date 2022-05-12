@@ -3,11 +3,13 @@ It also has themes for brushes preview and this add-on makes easy to apply a new
 
 Support Blender version: **2.83+**
 
+<!---
 [![Donate](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/donate/?hosted_button_id=C77W5ZVC6R562)
+--->
 
 # Installation
 
-- [**DOWNLOAD LATEST RELEASE**](https://github.com/tingjoybits/Brush_Manager/releases/latest/download/Brush_Manager129.zip)<- file
+- [**DOWNLOAD LATEST RELEASE**](https://github.com/tingjoybits/Brush_Manager/releases/latest/download/Brush_Manager130.zip)<- file
 - Open Blender and select Edit->Preferences
 - Click Add-ons category and then 'Install...' button
 - Select the downloaded archive file from download link (The archive downloaded from 'Code' button won't work, please use the releases)
@@ -44,6 +46,15 @@ https://tingjoybits.gumroad.com/
 
 
 # Change Log
+
+**Brush Manager 1.3.0**
+
+- Added support for two default paint brushes in the Sculpt mode, which are 'Paint' and 'Smear' gained an official release out of experimental development in Blender 3.2.0 version. This update includes new icons for these brushes.
+- Updated 3D Ninjas Blender Image Preview library to latest 1.0.11 version. (Still the superior solution to the faster icons preview)
+- Various fixes.
+
+![](icon_themes/round%20basic/paint.png)
+![](icon_themes/round%20basic/smear.png)
 
 **Brush Manager 1.2.9**
 
