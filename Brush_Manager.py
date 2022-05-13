@@ -2793,9 +2793,7 @@ def draw_similar_settings(self, context, layout, mode=''):
     return prop_col, box
 
 
-def draw_preferences(self, context, layout):
-    # prefs = context.preferences.addons[Addon_Name].preferences
-    # layout = self.layout
+def draw_3dn_bip_installation(self, context, layout):
     box = layout.box()
     row = box.row()
     row.prop(self, "use_3dn_bip_previews")
@@ -2833,6 +2831,12 @@ def draw_preferences(self, context, layout):
                 row = box.row()
                 row.label(text='Uninstall and restart Blender')
 
+
+def draw_preferences(self, context, layout):
+    # prefs = context.preferences.addons[Addon_Name].preferences
+    # layout = self.layout
+    if sys.platform == "win32":
+        draw_3dn_bip_installation(self, context, layout)
     row = layout.row()
     if self.show_common:
         row.prop(self, "show_common", icon='TRIA_DOWN', toggle=True)
