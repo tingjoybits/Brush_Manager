@@ -896,7 +896,11 @@ def set_active_tool(tool_name):
             override = bpy.context.copy()
             override["space_data"] = area.spaces[0]
             override["area"] = area
-            bpy.ops.wm.tool_set_by_id(override, name=tool_name)
+            if bpy.app.version < (4, 0, 0):
+                bpy.ops.wm.tool_set_by_id(override, name=tool_name)
+                continue
+            with bpy.context.temp_override(**override):
+                bpy.ops.wm.tool_set_by_id(name=tool_name)
 
 
 def get_icon_name(context, brush_name):
