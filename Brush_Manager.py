@@ -899,8 +899,9 @@ def set_active_tool(tool_name):
             if bpy.app.version < (4, 0, 0):
                 bpy.ops.wm.tool_set_by_id(override, name=tool_name)
                 continue
-            with bpy.context.temp_override(**override):
-                bpy.ops.wm.tool_set_by_id(name=tool_name)
+            region = area.regions[-1]
+            with bpy.context.temp_override(area=area, region=region):
+                bpy.ops.wm.tool_set_by_id('INVOKE_DEFAULT', name=tool_name)
 
 
 def get_icon_name(context, brush_name):
